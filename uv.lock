@@ -814,6 +814,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "chromadb" },
+    { name = "fil" },
     { name = "ipykernel" },
     { name = "jupyterlab" },
     { name = "langchain" },
@@ -840,6 +841,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "chromadb", specifier = ">=1.0" },
+    { name = "fil", specifier = ">=1.6.0" },
     { name = "ipykernel", specifier = ">=7.3.0" },
     { name = "jupyterlab", specifier = ">=4.6.2" },
     { name = "langchain", specifier = ">=1.0" },
@@ -879,6 +881,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/e4/98/474719c58eddaf77fa443b063693e76d49db32bbe851bcbaf58d2700119f/fastjsonschema-2.22.1.tar.gz", hash = "sha256:0b83d1ce8d7845b959dcb20e1a5c3c8883b6541d9c52ab02cce5166b75ec805f", size = 382291, upload-time = "2026-07-27T13:31:08.515Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/17/e1/62cc96341f01bdff2ba967441939178fcd1900d11ce7e6554d9954a5d7ec/fastjsonschema-2.22.1-py3-none-any.whl", hash = "sha256:cf377ff5c9a6f4f3125fb35f75a2c5767bd824ffbcf62c209a93cd48d1453999", size = 26239, upload-time = "2026-07-27T13:31:03.251Z" },
+]
+
+[[package]]
+name = "fil"
+version = "1.6.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "safer" },
+    { name = "types-ujson" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/2c/45/cb22d89802f770ec2898d105279e6e8695fc7ea317ca42c0cf6280ac4d8e/fil-1.6.0.tar.gz", hash = "sha256:b8467bb9891bef50d51ad00809a20f99d9c7787070e9af13aed646a01c4d8c8b", size = 19539, upload-time = "2026-05-09T13:46:31.701Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f7/90/362111a21b816eeb63cf4d3b849717000521267698695ee62c1643eb82ed/fil-1.6.0-py3-none-any.whl", hash = "sha256:d8c9e5cb9df3c29bc3295f3408fd812e39da99d35fa7cb21d224c56881ec4a58", size = 3591, upload-time = "2026-05-09T13:46:32.616Z" },
 ]
 
 [[package]]
@@ -3943,6 +3958,15 @@ wheels = [
 ]
 
 [[package]]
+name = "safer"
+version = "5.4.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/dc/1b/bc8866d3c97fac813a6cd932a992ab17bebdd8810b1aaeda66d6e9c79865/safer-5.4.0.tar.gz", hash = "sha256:6adfe6c021fe0e215233a78965bb780425259fe707353cb581a524d90ab1e4bc", size = 81533, upload-time = "2026-05-09T13:41:20.617Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a8/05/53fdbbcee732a15b9443e8c5f683d31fc48df6aa9e3491ad979ae469b326/safer-5.4.0-py3-none-any.whl", hash = "sha256:e52dbe65eccc70d5f677674592eb435364d312efaf41c11e79e8535ac2367a23", size = 10658, upload-time = "2026-05-09T13:41:19.527Z" },
+]
+
+[[package]]
 name = "safetensors"
 version = "0.8.0"
 source = { registry = "https://pypi.org/simple" }
@@ -4531,6 +4555,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ae/40/4a3db7990d1f62a53182aa96eaef57aeb2886a27f90a195bc66713565d31/typer-0.27.1.tar.gz", hash = "sha256:a79bef8469a79c45498e7b814ecf8d603cc7644e9acbd9e19cac0334240b18df", size = 203994, upload-time = "2026-08-03T14:41:03.438Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/43/89/9518bc0c3929bee36b3a4a8e3daddd6e03f92f9961c66d4983b837160543/typer-0.27.1-py3-none-any.whl", hash = "sha256:53150287edd11baeb4e4722c8e394fcdf8181c0ae89485cba8d25c778d5edd56", size = 122874, upload-time = "2026-08-03T14:41:04.391Z" },
+]
+
+[[package]]
+name = "types-ujson"
+version = "5.10.0.20250822"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/5c/bd/d372d44534f84864a96c19a7059d9b4d29db8541828b8b9dc3040f7a46d0/types_ujson-5.10.0.20250822.tar.gz", hash = "sha256:0a795558e1f78532373cf3f03f35b1f08bc60d52d924187b97995ee3597ba006", size = 8437, upload-time = "2025-08-22T03:02:19.433Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d7/f2/d812543c350674d8b3f6e17c8922248ee3bb752c2a76f64beb8c538b40cf/types_ujson-5.10.0.20250822-py3-none-any.whl", hash = "sha256:3e9e73a6dc62ccc03449d9ac2c580cd1b7a8e4873220db498f7dd056754be080", size = 7657, upload-time = "2025-08-22T03:02:18.699Z" },
 ]
 
 [[package]]
