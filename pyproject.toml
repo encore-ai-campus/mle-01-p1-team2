@@ -33,5 +33,4 @@ dependencies = [
     "langchain-chroma>=0.2",
     "langchain-huggingface>=0.3",
     "langchain-text-splitters>=1.0",
-    "matplotlib>=3.11.1",
 ]
