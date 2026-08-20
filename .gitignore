@@ -62,3 +62,4 @@ Thumbs.db
 *.pth
 *.h5
 notebooks/chroma_db/
+notebooks/data/
