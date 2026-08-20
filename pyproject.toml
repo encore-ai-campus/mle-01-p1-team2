@@ -34,4 +34,5 @@ dependencies = [
     "langchain-huggingface>=0.3",
     "langchain-text-splitters>=1.0",
     "streamlit>=1.61.1",
+    "fil>=1.6.0",
 ]
