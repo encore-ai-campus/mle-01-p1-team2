@@ -77,6 +77,15 @@ def load_rag_chain():
         return None
     return PROMPT | ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key) | StrOutputParser()
 
+@st.cache_resource(show_spinner=False)
+def initialize_rag():
+    db = load_vector_db()
+    rag_chain = load_rag_chain()
+
+    # 최초 1회 임베딩 모델 warm-up
+    db._embedding_function.embed_query("warmup")
+
+    return db, rag_chain
 
 def selected_filter_items(filters):
     if not filters:
@@ -160,25 +169,57 @@ def load_disease_options():
 
     return normalize_disease_options(diseases)
 
+
+def normalize_question(question):
+    return "".join(question.lower().split()).strip("!?.,。！？")
+
+
+def get_direct_answer(question):
+    normalized = normalize_question(question)
+    direct_answers = {
+        "안녕": "안녕하세요. 반려견 건강 관련 질문을 입력해 주세요.",
+        "안녕하세요": "안녕하세요. 반려견 건강 관련 질문을 입력해 주세요.",
+        "하이": "안녕하세요. 반려견 건강 관련 질문을 입력해 주세요.",
+        "감사합니다": "도움이 되었다니 다행이에요.",
+        "고마워요": "도움이 되었다니 다행이에요.",
+        "고마워": "도움이 되었다니 다행이에요.",
+        "너는누구야": "반려견 건강 질문에 학습 데이터 기반으로 답변하는 도우미입니다.",
+        "무엇을할수있어": "반려견의 증상과 질병에 관한 질문을 도와드릴 수 있어요.",
+    }
+    return direct_answers.get(normalized)
+
+
 def ask_rag(question, k=3, filters=None):
     if not question or not question.strip():
         raise ValueError("질문을 입력해 주세요.")
 
+    direct_answer = get_direct_answer(question)
+    if direct_answer is not None:
+        return {"answer": direct_answer, "evidence_rows": []}
+
+    # 이미 초기화된 DB / LLM chain 사용
+    db, rag_chain = initialize_rag()
+
     search_query = build_search_query(question, filters)
     metadata_filter = build_metadata_filter(filters)
-    docs = load_vector_db().similarity_search(
+
+    docs = db.similarity_search(
         search_query,
         k=k,
         filter=metadata_filter,
     )
+
     context = "\n\n".join(
-        f"질문: {doc.page_content}\n답변: {doc.metadata.get('qa.output', '')}"
+        f"질문: {doc.page_content}\n"
+        f"답변: {doc.metadata.get('qa.output', '')}"
         for doc in docs
     )
 
-    rag_chain = load_rag_chain()
     if rag_chain is None:
-        answer = "유사도 검색은 성공했습니다. 답변 생성에는 OPENAI_API_KEY가 필요합니다."
+        answer = (
+            "유사도 검색은 성공했습니다. "
+            "답변 생성에는 OPENAI_API_KEY가 필요합니다."
+        )
     else:
         answer = rag_chain.invoke({
             "context": context,
@@ -187,8 +228,11 @@ def ask_rag(question, k=3, filters=None):
         })
 
     evidence_rows = [doc.metadata for doc in docs]
-    return {"answer": answer, "evidence_rows": evidence_rows}
 
+    return {
+        "answer": answer,
+        "evidence_rows": evidence_rows,
+    }
 
 def format_evidence_row(row, index):
     life_cycle = row.get("meta.lifeCycle") or row.get("lifeCycle") or "-"
@@ -204,17 +248,45 @@ def format_evidence_row(row, index):
 
 def render_rag_page():
     st.title("질병 문의")
-    st.caption("반려견 증상을 질문하면 학습 데이터에서 관련 사례를 찾고, 검색 근거를 바탕으로 답변합니다.")
+    st.caption(
+        "반려견 증상을 질문하면 학습 데이터에서 관련 사례를 찾고, "
+        "검색 근거를 바탕으로 답변합니다."
+    )
 
-    filter_col1, filter_col2, filter_col3, filter_col4 = st.columns([1, 1, 1, 1])
+    disease_options = load_disease_options()
+
+    # -------------------------
+    # 검색 조건 UI
+    # -------------------------
+    filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(
+        [1, 1, 1, 1]
+    )
+
     with filter_col1:
-        life_cycle = st.selectbox("나이 단계", LIFE_CYCLE_OPTIONS)
+        life_cycle = st.selectbox(
+            "나이 단계",
+            LIFE_CYCLE_OPTIONS,
+        )
+
     with filter_col2:
-        department = st.selectbox("진료과", DEPARTMENT_OPTIONS)
+        department = st.selectbox(
+            "진료과",
+            DEPARTMENT_OPTIONS,
+        )
+
     with filter_col3:
-        disease = st.selectbox("질병 종류", load_disease_options())
+        disease = st.selectbox(
+            "질병 종류",
+            disease_options,
+        )
+
     with filter_col4:
-        top_k = st.slider("참고할 근거 수", min_value=1, max_value=5, value=3)
+        top_k = st.slider(
+            "참고할 근거 수",
+            min_value=1,
+            max_value=5,
+            value=3,
+        )
 
     filters = {
         "life_cycle": life_cycle,
@@ -222,40 +294,85 @@ def render_rag_page():
         "disease": disease,
     }
 
+    # -------------------------
+    # 채팅 기록 초기화
+    # -------------------------
     if "rag_messages" not in st.session_state:
         st.session_state.rag_messages = []
 
+    # 기존 채팅 출력
     for message in st.session_state.rag_messages:
         with st.chat_message(message["role"]):
             st.write(message["content"])
 
-    question = st.chat_input("예: 강아지가 계속 구토해요")
+    # -------------------------
+    # 사용자 질문
+    # -------------------------
+    question = st.chat_input(
+        "예: 강아지가 계속 구토해요"
+    )
+
     if not question:
         return
 
-    st.session_state.rag_messages.append({"role": "user", "content": question})
+    # 사용자 메시지 저장
+    st.session_state.rag_messages.append({
+        "role": "user",
+        "content": question,
+    })
+
     with st.chat_message("user"):
         st.write(question)
 
+    # -------------------------
+    # RAG 실행
+    # -------------------------
     with st.chat_message("assistant"):
         try:
-            with st.spinner("관련 사례를 검색하고 답변을 생성하는 중입니다..."):
-                result = ask_rag(question, k=top_k, filters=filters)
+            with st.spinner(
+                "관련 사례를 검색하고 답변을 생성하는 중입니다..."
+            ):
+                result = ask_rag(
+                    question,
+                    k=top_k,
+                    filters=filters,
+                )
+
         except Exception as exc:
-            st.error(f"RAG 실행 중 오류가 발생했습니다: {exc}")
+            st.error(
+                f"RAG 실행 중 오류가 발생했습니다: {exc}"
+            )
             return
 
+        # 답변 출력
         st.write(result["answer"])
-        st.session_state.rag_messages.append(
-            {"role": "assistant", "content": result["answer"]}
-        )
 
+        # 답변 기록 저장
+        st.session_state.rag_messages.append({
+            "role": "assistant",
+            "content": result["answer"],
+        })
+
+        # -------------------------
+        # 검색 근거 출력
+        # -------------------------
         if result["evidence_rows"]:
             st.markdown("#### 검색 근거")
-            for index, row in enumerate(result["evidence_rows"]):
-                evidence = format_evidence_row(row, index)
-                with st.expander(evidence["title"]):
-                    st.markdown(evidence["body"])
+
+            for index, row in enumerate(
+                result["evidence_rows"]
+            ):
+                evidence = format_evidence_row(
+                    row,
+                    index,
+                )
+
+                with st.expander(
+                    evidence["title"]
+                ):
+                    st.markdown(
+                        evidence["body"]
+                    )
 
 
 def is_streamlit_runtime():
