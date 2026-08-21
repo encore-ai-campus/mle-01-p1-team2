@@ -18,6 +18,8 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
+from src.ui import apply_app_theme, render_page_header
+
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 CHROMA_DIR = PROJECT_DIR / "data" / "chroma_db"
 TRAINING_DATA_PATH = PROJECT_DIR / "data" / "training" / "df.csv"
@@ -203,6 +205,29 @@ LOCATION_ALIASES = {
 }
 
 
+
+SQL_ANSWER_PROMPT = ChatPromptTemplate.from_messages([
+    (
+        "system",
+        "검색된 동물병원 데이터만 근거로 간결하게 답하세요. 검색 결과가 없으면 찾지 못했다고 말하세요.",
+    ),
+    ("human", "질문: {question}\n검색 결과: {rows}"),
+])
+
+COUNT_QUERY_KEYWORDS = ("몇개", "몇 개", "개수", "몇곳", "몇 곳", "몇군데", "몇 군데")
+HOSPITAL_QUERY_KEYWORDS = ("동물병원", "병원 주소", "병원 목록", "병원 검색")
+LOCATION_ALIASES = {
+    "서울시": "서울특별시",
+    "부산시": "부산광역시",
+    "대구시": "대구광역시",
+    "인천시": "인천광역시",
+    "광주시": "광주광역시",
+    "대전시": "대전광역시",
+    "울산시": "울산광역시",
+    "세종시": "세종특별자치시",
+}
+
+
 @st.cache_resource(show_spinner=False)
 def load_chat_model():
     api_key = get_openai_api_key()
@@ -251,6 +276,8 @@ def fallback_sql(question: str) -> str:
 def is_count_query(question: str) -> bool:
     normalized = "".join(question.lower().split())
     return any("".join(keyword.split()) in normalized for keyword in COUNT_QUERY_KEYWORDS)
+
+
 
 
 def is_hospital_question(question: str) -> bool:
@@ -477,6 +504,13 @@ def chatbot(
 
 
 def render_page():
+    apply_app_theme()
+    render_page_header(
+        "반려견 AI 상담",
+        eyebrow="반려동물 건강 정보",
+        description="질병 질문은 RAG로, 병원 검색은 SQLite로 처리합니다.",
+        accent="검증된 정보로 함께 살펴봐요",
+    )
     st.title("반려견 AI 상담")
     st.caption("질병 질문은 RAG로, 병원 검색은 SQLite로 처리합니다.")
 

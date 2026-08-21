@@ -5,6 +5,9 @@ import pandas as pd
 import streamlit as st
 import pydeck as pdk
 from pyproj import Transformer
+from src.ui import apply_app_theme, render_page_header
+
+apply_app_theme()
 
 
 # =========================
@@ -140,7 +143,12 @@ region_dict = {
 # 화면 구성
 # =========================
 
-st.title("지역별 동물 병원 찾기")
+render_page_header(
+    "지역별 동물 병원 찾기",
+    eyebrow="가까운 병원 찾기",
+    description="지역을 선택하면 가까운 동물병원 정보와 위치를 빠르게 확인할 수 있습니다.",
+    accent="우리 동네의 든든한 진료 파트너",
+)
 
 st.subheader("검색할 시와 구/군을 선택하세요.")
 

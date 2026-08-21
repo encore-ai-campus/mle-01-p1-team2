@@ -2,25 +2,25 @@ import os
 os.environ.setdefault("ARROW_DEFAULT_MEMORY_POOL", "system")
 import streamlit as st
 
-st.set_page_config(page_title="PetCare AI", page_icon=":material/pets:", layout="wide")
+from src.ui import NAVIGATION_GROUPS, apply_app_theme, render_footer, render_sidebar
 
-with st.sidebar:
-    st.session_state.sidebar_slot = st.empty()
-    st.divider()
+st.set_page_config(page_title="동물 구조대", page_icon=":material/pets:", layout="wide")
+apply_app_theme()
+render_sidebar()
 
-pg = st.navigation(
-    {
-        "소개페이지": [
-            st.Page("pages/home.py", title="home", icon="🏠", default=True),
-        ],
-        "데이터 소개": [
-            st.Page("pages/data.py", title="데이터 소개", icon="📊"),
-        ],
-        "챗봇": [
-            st.Page("pages/rag.py", title="질병 문의", icon="💬"),
-            st.Page("pages/hospital.py", title="병원 검색", icon="🏥"),
-        ],
-    }
-)
+navigation = {
+    group["label"]: [
+        st.Page(
+            item["path"],
+            title=item["title"],
+            icon=item["icon"],
+            default=item.get("default", False),
+        )
+        for item in group["items"]
+    ]
+    for group in NAVIGATION_GROUPS
+}
 
+pg = st.navigation(navigation)
 pg.run()
+render_footer()
