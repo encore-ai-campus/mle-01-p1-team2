@@ -36,4 +36,5 @@ dependencies = [
     "streamlit>=1.61.1",
     "fil>=1.6.0",
     "pyproj>=3.7.2",
+    "matplotlib>=3.11.1",
 ]
