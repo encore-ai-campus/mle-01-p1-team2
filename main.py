@@ -2,7 +2,7 @@ import os
 os.environ.setdefault("ARROW_DEFAULT_MEMORY_POOL", "system")
 import streamlit as st
 
-st.set_page_config(page_title="VetCare AI", page_icon=":material/pets:", layout="wide")
+st.set_page_config(page_title="PetCare AI", page_icon=":material/pets:", layout="wide")
 
 with st.sidebar:
     st.session_state.sidebar_slot = st.empty()

@@ -36,4 +36,8 @@ dependencies = [
     "streamlit>=1.61.1",
     "fil>=1.6.0",
     "pyproj>=3.7.2",
+    "pillow>=12.3.0",
+    "matplotlib>=3.11.1",
+    "plotly>=6.9.0",
+    "seaborn>=0.13.2",
 ]
