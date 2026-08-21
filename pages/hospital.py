@@ -1,12 +1,26 @@
-import os
-from pathlib import Path
 import sqlite3
-import streamlit as st
+from pathlib import Path
+
 import pandas as pd
+import streamlit as st
+import pydeck as pdk
 from pyproj import Transformer
 
-con = sqlite3.connect('./data/hospital.db')
+
+# =========================
+# DB 경로 설정
+# =========================
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+DB_PATH = BASE_DIR / "data" / "hospital.db"
+
+con = sqlite3.connect(DB_PATH)
 cursor = con.cursor()
+
+
+# =========================
+# 좌표계 설정
+# =========================
 
 SOURCE_CRS = "EPSG:5174"
 TARGET_CRS = "EPSG:4326"
@@ -17,71 +31,300 @@ transformer = Transformer.from_crs(
     always_xy=True
 )
 
+
+# =========================
+# 지역 목록
+# =========================
+
+region_dict = {
+
+    "서울특별시": [
+            "종로구", "중구", "용산구", "성동구", "광진구", "동대문구",
+            "중랑구", "성북구", "강북구", "도봉구", "노원구", "은평구",
+            "서대문구", "마포구", "양천구", "강서구", "구로구", "금천구",
+            "영등포구", "동작구", "관악구", "서초구", "강남구", "송파구",
+            "강동구"
+        ],
+
+    "경기도": [
+        "수원시", "성남시", "의정부시", "안양시", "부천시", "광명시",
+        "평택시", "동두천시", "안산시", "고양시", "과천시", "구리시",
+        "남양주시", "오산시", "시흥시", "군포시", "의왕시", "하남시",
+        "용인시", "파주시", "이천시", "안성시", "김포시", "연천군",
+        "가평군", "양평군", "화성시", "광주시", "양주시", "포천시",
+        "여주시"
+    ],
+
+    "부산광역시": [
+        "중구", "서구", "동구", "영도구", "부산진구", "동래구",
+        "남구", "북구", "해운대구", "사하구", "금정구", "강서구",
+        "연제구", "수영구", "사상구", "기장군"
+    ],
+
+    "경상남도": [
+        "진주시", "통영시", "사천시", "김해시", "밀양시", "거제시",
+        "양산시", "의령군", "함안군", "창녕군", "고성군", "남해군",
+        "하동군", "산청군", "함양군", "거창군", "합천군", "창원시"
+    ],
+
+    "전남광주통합특별시": [
+        "목포시", "여수시", "순천시", "나주시", "광양시",
+        "동구", "서구", "남구", "북구", "광산구",
+        "담양군", "곡성군", "구례군", "고흥군", "보성군",
+        "화순군", "장흥군", "강진군", "해남군", "영암군",
+        "무안군", "함평군", "영광군", "장성군", "완도군",
+        "진도군", "신안군"
+    ],
+
+    "인천광역시": [
+        "중구", "영종구", "제물포구", "미추홀구", "연수구",
+        "남동구", "부평구", "계양구", "서해구", "검단구", "강화군"
+    ],
+
+    "경상북도": [
+        "포항시", "경주시", "김천시", "안동시", "구미시", "영주시",
+        "영천시", "상주시", "문경시", "경산시", "의성군", "청송군",
+        "영양군", "영덕군", "청도군", "고령군", "성주군", "칠곡군",
+        "예천군", "봉화군", "울진군", "울릉군"
+    ],
+
+    "대구광역시": [
+        "중구", "동구", "서구", "남구", "북구",
+        "수성구", "달서구", "달성군", "군위군"
+    ],
+
+    "충청남도": [
+        "천안시", "공주시", "보령시", "아산시", "서산시",
+        "논산시", "금산군", "부여군", "서천군", "청양군",
+        "홍성군", "예산군", "태안군", "계룡시", "당진시"
+    ],
+
+    "전북특별자치도": [
+        "전주시", "군산시", "익산시", "정읍시", "남원시",
+        "김제시", "완주군", "진안군", "무주군", "장수군",
+        "임실군", "순창군", "고창군", "부안군"
+    ],
+
+    "충청북도": [
+        "충주시", "제천시", "보은군", "옥천군", "영동군",
+        "진천군", "괴산군", "음성군", "단양군", "증평군",
+        "청주시"
+    ],
+
+    "강원특별자치도": [
+        "춘천시", "원주시", "강릉시", "동해시", "태백시", "속초시",
+        "삼척시", "홍천군", "횡성군", "영월군", "평창군", "정선군",
+        "철원군", "화천군", "양구군", "인제군", "고성군", "양양군"
+    ],
+
+    "대전광역시": [
+        "동구", "중구", "서구", "유성구", "대덕구"
+    ],
+
+    "울산광역시": [
+        "중구", "남구", "동구", "북구", "울주군"
+    ],
+
+    "제주특별자치도": [
+        "제주시", "서귀포시"
+    ],
+
+    "세종특별자치시": [
+        "한누리대로", "새롬중앙로", "조치원읍", "마음로", "다정중앙로",
+        "장군면", "나성로", "보람로", "집현북로", "해밀3로", "금남면",
+        "아름서1길", "도움3로", "보듬3로", "연서면", "다정1길", "노을1로"
+    ]
+}
+
+# =========================
+# 화면 구성
+# =========================
+
 st.title("지역별 동물 병원 찾기")
 
+st.subheader("검색할 시와 구/군을 선택하세요.")
 
-big_list=['서울', '부산', '대전', '대구', '광주']
-seoul_list=["종로구", "중구", "용산구", "성동구", "광진구", "동대문구",
-    "중랑구", "성북구", "강북구", "도봉구", "노원구", "은평구", "서대문구", "마포구",
-    "양천구", "강서구", "구로구", "금천구", "영등포구", "동작구", "관악구",
-    "서초구", "강남구", "송파구", "강동구"]
-busan_list = ["중구", "서구", "동구", "영도구", "부산진구", "동래구", "남구", "북구", "해운대구", "사하구", "금정구",
-    "강서구", "연제구", "수영구", "사상구", "기장군"]
-daejeon_list = ["동구", "중구", "서구", "유성구", "대덕구"]
-daegu_gun_gu = ["남구","달서구", "달성군", "동구", "북구","서구","수성구","중구","군위군",]
-gwangju_list = ["동구", "서구", "남구", "북구", "광산구"]
+big = st.selectbox(
+    "시/도를 고르세요",
+    list(region_dict.keys())
+)
 
-# with st.form(key='form'):
-#     st.subheader('검색할 구/군을 고르세요')
-#     small = st.selectbox('구를 고르세요', seoul_list)
-#     st.success(f" {small}을 조회했습니다!")
-#     st.form_submit_button("제출")
+small = st.selectbox(
+    "시/군/구를 고르세요",
+    region_dict[big]
+)
 
-# if st.button("병원 조회"):
-#     cursor.execute("SELECT * FROM hospital WHERE old_address LIKE ?", (f"%{small}%",))
-#     st.success(f" {small}을 조회했습니다!")
-#     rows = cursor.fetchall()
-#     df = pd.DataFrame(rows, columns=["ids", "name", "new_address", "x_coor", "y_coor", "old_address"])
-#     st.dataframe(df)
 
-with st.form(key='form'):
-    st.subheader('검색할 시/구를 고르세요' \
-    '시를 누르고 제출을 눌러야 구를 제대로 고를 수 있습니다.')
-    big = st.selectbox('구를 고르세요', big_list)
-    # st.success(f" {big}을 조회했습니다!")
-    # st.form_submit_button("제출")
-    if big == '서울' :
-        small = st.selectbox('구를 고르세요', seoul_list)
-    elif big == '부산':
-        small = st.selectbox('구를 고르세요', busan_list)
-    elif big == '대전':
-        small = st.selectbox('구를 고르세요', daejeon_list)
-    elif big == '대구':
-        small = st.selectbox('구를 고르세요', daejeon_list)
-    elif big == '광주':
-        small = st.selectbox('구를 고르세요', daejeon_list)
-    st.success(f"{big}, {small}을 조회했습니다!")
-    st.form_submit_button("제출")
+# =========================
+# 병원 조회
+# =========================
 
 if st.button("병원 조회"):
-    cursor.execute("SELECT * FROM hospital WHERE new_address LIKE ? AND new_address LIKE ?", (f"{big}%",f"%{small}%",))
-    st.success(f"{big} {small}을 조회했습니다!")
+
+    cursor.execute(
+    """
+    SELECT *
+    FROM hospital
+    WHERE new_address LIKE ?
+    AND new_address LIKE ?
+    """,
+    (
+        f"{big}%",
+        f"%{small}%"
+    )
+)
+
     rows = cursor.fetchall()
-    df = pd.DataFrame(rows, columns=["ids", "name", "new_address", "x_coor", "y_coor", "old_address"])
-    st.dataframe(df)
 
-    df["x_coor"] = pd.to_numeric(df["x_coor"], errors="coerce")
-    df["y_coor"] = pd.to_numeric(df["y_coor"], errors="coerce")
-    valid_df = df.dropna(subset=["x_coor", "y_coor"])
-    long, lat = transformer.transform(
-    valid_df["x_coor"].to_numpy(),
-    valid_df["y_coor"].to_numpy())
-    lat_list = lat.tolist()
-    long_list = long.tolist()
+    df = pd.DataFrame(
+        rows,
+        columns=[
+            "ids",
+            "name",
+            "new_address",
+            "x_coor",
+            "y_coor",
+            "old_address"
+        ]
+    )
 
-    data = pd.DataFrame({
-        'lat' : lat_list,
-        'lon' : long_list})
-    st.map(data, latitude='lat', longitude='lon')
 
-    
+    # =========================
+    # 검색 결과 없음
+    # =========================
+
+    if df.empty:
+
+        st.warning(
+            f"{big} {small} 지역의 병원을 찾지 못했습니다."
+        )
+
+    else:
+
+        st.success(
+            f"{big} {small} 지역에서 "
+            f"{len(df)}개의 병원을 찾았습니다."
+        )
+
+
+        # =========================
+        # 병원 목록
+        # =========================
+
+        st.subheader("병원 목록")
+
+        st.dataframe(
+            df[
+                [
+                    "name",
+                    "new_address",
+                    "old_address"
+                ]
+            ],
+            use_container_width=True
+        )
+
+
+        # =========================
+        # 좌표 숫자 변환
+        # =========================
+
+        df["x_coor"] = pd.to_numeric(
+            df["x_coor"],
+            errors="coerce"
+        )
+
+        df["y_coor"] = pd.to_numeric(
+            df["y_coor"],
+            errors="coerce"
+        )
+
+
+        valid_df = df.dropna(
+            subset=[
+                "x_coor",
+                "y_coor"
+            ]
+        ).copy()
+
+
+        # =========================
+        # 지도 출력
+        # =========================
+
+        if valid_df.empty:
+
+            st.warning(
+                "지도에 표시할 수 있는 좌표 정보가 없습니다."
+            )
+
+        else:
+
+            # 좌표 변환
+            lon, lat = transformer.transform(
+                valid_df["x_coor"].to_numpy(),
+                valid_df["y_coor"].to_numpy()
+            )
+
+            valid_df["lat"] = lat
+            valid_df["lon"] = lon
+
+
+            st.subheader("병원 위치")
+
+
+            # 지도 중심 위치
+            center_lat = valid_df["lat"].mean()
+            center_lon = valid_df["lon"].mean()
+
+
+            # 병원 위치 원 표시
+            hospital_layer = pdk.Layer(
+                "ScatterplotLayer",
+                data=valid_df,
+                get_position="[lon, lat]",
+                get_radius=10,
+                get_fill_color=[255, 0, 0, 160],
+                get_line_color=[255, 0, 0],
+                line_width_min_pixels=1,
+                pickable=True,
+                stroked=True,
+                filled=True
+                )
+
+            # 지도 기본 위치
+            view_state = pdk.ViewState(
+                latitude=center_lat,
+                longitude=center_lon,
+
+                # 숫자가 클수록 확대
+                zoom=12,
+
+                pitch=0
+            )
+
+
+            # 지도 출력
+            st.pydeck_chart(
+                pdk.Deck(
+                    layers=[
+                        hospital_layer
+                    ],
+
+                    initial_view_state=view_state,
+
+                    tooltip={
+                        "html": """
+                        <b>병원명:</b> {name}<br/>
+                        <b>주소:</b> {new_address}
+                        """,
+
+                        "style": {
+                            "backgroundColor": "black",
+                            "color": "white"
+                        }
+                    }
+                ),
+
+                use_container_width=True
+            )
