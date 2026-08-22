@@ -35,6 +35,65 @@ transformer = Transformer.from_crs(
 )
 
 
+def render_selected_hospital():
+    hospital_id = st.session_state.get("selected_hospital_id")
+    if hospital_id is None:
+        return False
+
+    selected_df = pd.read_sql_query(
+        "SELECT * FROM hospital WHERE ids = ?",
+        con,
+        params=[hospital_id],
+    )
+    if selected_df.empty:
+        st.warning("선택한 병원을 찾지 못했습니다.")
+        return True
+
+    selected_df["x_coor"] = pd.to_numeric(selected_df["x_coor"], errors="coerce")
+    selected_df["y_coor"] = pd.to_numeric(selected_df["y_coor"], errors="coerce")
+    valid_df = selected_df.dropna(subset=["x_coor", "y_coor"]).copy()
+    if valid_df.empty:
+        st.warning("선택한 병원의 좌표 정보가 없습니다.")
+        return True
+
+    lon, lat = transformer.transform(
+        valid_df["x_coor"].to_numpy(),
+        valid_df["y_coor"].to_numpy(),
+    )
+    valid_df["lat"] = lat
+    valid_df["lon"] = lon
+    hospital = valid_df.iloc[0]
+
+    st.title("선택한 병원 위치")
+    st.subheader(hospital["name"])
+    st.write(hospital["new_address"])
+    st.pydeck_chart(
+        pdk.Deck(
+            layers=[pdk.Layer(
+                "ScatterplotLayer",
+                data=valid_df,
+                get_position="[lon, lat]",
+                get_radius=30,
+                get_fill_color=[255, 0, 0, 180],
+                pickable=True,
+            )],
+            initial_view_state=pdk.ViewState(
+                latitude=hospital["lat"],
+                longitude=hospital["lon"],
+                zoom=16,
+            ),
+            tooltip={"text": "{name}\n{new_address}"},
+        ),
+        use_container_width=True,
+    )
+    return True
+
+
+if render_selected_hospital():
+    con.close()
+    st.stop()
+
+
 # =========================
 # 지역 목록
 # =========================

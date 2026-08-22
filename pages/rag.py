@@ -6,7 +6,7 @@ import sqlite3
 import tomllib
 from datetime import date
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -176,7 +176,7 @@ SQL_GENERATION_PROMPT = ChatPromptTemplate.from_messages([
         """사용자의 병원 검색 질문을 SQLite SQL로 변환하세요.
 사용할 수 있는 테이블은 hospital 하나뿐이며 컬럼은 다음과 같습니다.
 ids, name, new_address, x_coor, y_coor, old_address
-반드시 읽기 전용 SELECT 문 하나만 출력하세요.
+반드시 ids, name, new_address, x_coor, y_coor를 포함한 읽기 전용 SELECT 문 하나만 출력하세요.
 주소 검색은 new_address와 old_address를 LIKE로 함께 고려하고, 결과는 최대 10개로 제한하세요.
 SQL 코드 블록이나 설명 없이 SQL만 출력하세요.""",
     ),
@@ -192,6 +192,18 @@ SQL_ANSWER_PROMPT = ChatPromptTemplate.from_messages([
 ])
 
 COUNT_QUERY_KEYWORDS = ("몇개", "몇 개", "개수", "몇곳", "몇 곳", "몇군데", "몇 군데")
+SINGLE_HOSPITAL_KEYWORDS = (
+    "하나만",
+    "한개만",
+    "한 개만",
+    "한곳만",
+    "한 곳만",
+    "한병원만",
+    "병원하나만",
+    "병원1개만",
+    "하나의",
+)
+NEAREST_HOSPITAL_KEYWORDS = ("가장 가까운", "가까운 병원", "근처 병원", "근처에")
 HOSPITAL_QUERY_KEYWORDS = ("동물병원", "병원 주소", "병원 목록", "병원 검색")
 LOCATION_ALIASES = {
     "서울시": "서울특별시",
@@ -249,7 +261,11 @@ def validate_sql(sql: str) -> str:
         raise ValueError("읽기 전용 SELECT 문만 실행할 수 있습니다.")
     if ";" in cleaned or "--" in cleaned or "/*" in cleaned:
         raise ValueError("여러 문장이나 주석이 포함된 SQL은 실행할 수 없습니다.")
-    if "hospital" not in normalized:
+    referenced_tables = re.findall(
+        r"\b(?:from|join)\s+([a-z_][a-z0-9_]*)",
+        normalized,
+    )
+    if not referenced_tables or any(table != "hospital" for table in referenced_tables):
         raise ValueError("hospital 테이블만 조회할 수 있습니다.")
     return cleaned
 
@@ -266,11 +282,13 @@ def fallback_sql(question: str) -> str:
         return f"SELECT COUNT(*) AS count FROM hospital WHERE {conditions}"
 
     if not keywords:
-        return "SELECT name, new_address, old_address FROM hospital LIMIT 10"
+        limit = 1 if is_single_hospital_query(question) or is_nearest_hospital_query(question) else 10
+        return f"SELECT ids, name, new_address, x_coor, y_coor, old_address FROM hospital LIMIT {limit}"
     conditions = " OR ".join(
         "new_address LIKE ? OR old_address LIKE ?" for _ in keywords
     )
-    return f"SELECT name, new_address, old_address FROM hospital WHERE {conditions} LIMIT 10"
+    limit = 1 if is_single_hospital_query(question) or is_nearest_hospital_query(question) else 10
+    return f"SELECT ids, name, new_address, x_coor, y_coor, old_address FROM hospital WHERE {conditions} LIMIT {limit}"
 
 
 def is_count_query(question: str) -> bool:
@@ -278,6 +296,14 @@ def is_count_query(question: str) -> bool:
     return any("".join(keyword.split()) in normalized for keyword in COUNT_QUERY_KEYWORDS)
 
 
+def is_single_hospital_query(question: str) -> bool:
+    normalized = "".join(question.lower().split())
+    return any("".join(keyword.split()) in normalized for keyword in SINGLE_HOSPITAL_KEYWORDS)
+
+
+def is_nearest_hospital_query(question: str) -> bool:
+    normalized = "".join(question.lower().split())
+    return any("".join(keyword.split()) in normalized for keyword in NEAREST_HOSPITAL_KEYWORDS)
 
 
 def is_hospital_question(question: str) -> bool:
@@ -307,16 +333,25 @@ def extract_search_parameters(question: str) -> list[str]:
 def format_sql_result(data: list[dict]) -> str:
     if len(data) == 1 and "count" in data[0]:
         return f"조건에 맞는 동물병원은 {data[0]['count']}개입니다."
-    return json.dumps(data, ensure_ascii=False)
+    if not data:
+        return "조건에 맞는 동물병원을 찾지 못했습니다."
+
+    lines = [f"조건에 맞는 동물병원 {len(data)}곳입니다."]
+    for index, row in enumerate(data, start=1):
+        lines.append(f"{index}. {row.get('name', '이름 없음')}")
+        address = row.get("new_address") or row.get("old_address") or "주소 없음"
+        lines.append(f"   주소: {address}")
+    return "\n".join(lines)
 
 
-@tool
-def sql_tool(question: str) -> str:
+def run_sql_search(question: str) -> tuple[str, list[dict]]:
     """지역, 주소, 병원명으로 동물병원 SQLite 데이터를 검색합니다."""
-    model = load_chat_model()
     parameters = extract_search_parameters(question)
 
-    if model is None or is_count_query(question):
+    # 지역 조건은 정해진 SQL로 처리해 SQL 생성·답변용 LLM 호출을 줄입니다.
+    use_fallback = bool(parameters) or is_count_query(question)
+    model = None if use_fallback else load_chat_model()
+    if model is None:
         sql = fallback_sql(question)
     else:
         sql = (SQL_GENERATION_PROMPT | model | StrOutputParser()).invoke(
@@ -324,6 +359,13 @@ def sql_tool(question: str) -> str:
         )
 
     sql = validate_sql(sql)
+    if (
+        is_single_hospital_query(question) or is_nearest_hospital_query(question)
+    ) and not is_count_query(question):
+        if re.search(r"\blimit\s+\d+", sql, flags=re.IGNORECASE):
+            sql = re.sub(r"\blimit\s+\d+", "LIMIT 1", sql, flags=re.IGNORECASE)
+        else:
+            sql = f"{sql} LIMIT 1"
     connection = sqlite3.connect(DB_PATH)
     connection.row_factory = sqlite3.Row
     try:
@@ -337,10 +379,18 @@ def sql_tool(question: str) -> str:
 
     data = [dict(row) for row in rows]
     if model is None:
-        return format_sql_result(data)
-    return (SQL_ANSWER_PROMPT | model | StrOutputParser()).invoke(
+        return format_sql_result(data), data
+    answer = (SQL_ANSWER_PROMPT | model | StrOutputParser()).invoke(
         {"question": question, "rows": json.dumps(data, ensure_ascii=False)}
     )
+    return answer, data
+
+
+@tool
+def sql_tool(question: str) -> str:
+    """지역, 주소, 병원명으로 동물병원 SQLite 데이터를 검색해 답합니다."""
+    answer, _ = run_sql_search(question)
+    return answer
 
 
 class RouteDecision(BaseModel):
@@ -480,7 +530,7 @@ def chatbot(
     question: str,
     *,
     top_k: int = 3,
-) -> dict[str, str]:
+) -> dict[str, Any]:
     """질문을 분류한 뒤 rag, sql, 또는 도구 없는 일반 응답을 실행합니다."""
     if not question or not question.strip():
         raise ValueError("질문을 입력해 주세요.")
@@ -497,10 +547,27 @@ def chatbot(
             "evidence_rows": rag_result["evidence_rows"],
         }
     elif route == "sql":
-        answer = sql_tool.invoke({"question": question})
+        answer, hospital_rows = run_sql_search(question)
     else:
         answer = answer_without_tool(question)
-    return {"route": route, "answer": answer}
+        hospital_rows = []
+    return {"route": route, "answer": answer, "hospital_rows": hospital_rows}
+
+
+def render_hospital_links(rows):
+    if not rows:
+        return
+    st.markdown("#### 지도에서 병원 보기")
+    for row in rows:
+        hospital_id = row.get("ids")
+        if hospital_id is None:
+            continue
+        if st.button(
+            f"{row.get('name', '병원')} - {row.get('new_address', '')}",
+            key=f"hospital_link_{hospital_id}",
+        ):
+            st.session_state["selected_hospital_id"] = hospital_id
+            st.switch_page("pages/hospital.py")
 
 
 def render_page():
@@ -532,6 +599,7 @@ def render_page():
         "예: 강아지가 계속 구토해요 / 강남구 병원을 알려주세요."
     )
     if not question:
+        render_hospital_links(st.session_state.get("hospital_rows", []))
         return
 
     st.session_state.fixing_messages.append({"role": "user", "content": question})
@@ -548,6 +616,9 @@ def render_page():
             st.session_state.fixing_messages.append(
                 {"role": "assistant", "content": result["answer"]}
             )
+
+            st.session_state["hospital_rows"] = result.get("hospital_rows", [])
+            render_hospital_links(st.session_state["hospital_rows"])
 
             evidence_rows = result.get("evidence_rows", [])
             if evidence_rows:
