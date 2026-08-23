@@ -29,6 +29,7 @@ ALL_FILTER = "전체"
 ETC_DISEASE = "기타"
 NONE_DISEASE = "None"
 DEPARTMENT_OPTIONS = [ALL_FILTER, "내과", "외과", "안과", "치과", "피부과"]
+SHORT_TERM_MEMORY_TURNS = 6
 
 
 load_dotenv(PROJECT_DIR / ".env")
@@ -37,6 +38,9 @@ load_dotenv(PROJECT_DIR / ".env")
 RAG_PROMPT = ChatPromptTemplate.from_messages([
     ("system", """아래 [검색 데이터]를 근거로 사용자의 질문에 답하세요.
 검색된 데이터에 근거해서만 간결하게 답하고, 데이터에 없는 내용은 추측하지 마세요.
+
+[대화 이력]
+{chat_history}
 
 [선택 조건]
 {filters}
@@ -128,12 +132,40 @@ def build_metadata_filter(filters):
     return conditions[0] if len(conditions) == 1 else {"$and": conditions}
 
 
-def ask_rag(question, k=3, filters=None):
+def get_recent_chat_history(messages, max_turns=SHORT_TERM_MEMORY_TURNS):
+    """세션에 저장된 대화에서 최근 사용자-AI 대화만 반환합니다."""
+    if not messages:
+        return []
+    return list(messages[-max_turns * 2:])
+
+
+def format_chat_history(messages):
+    """대화 이력을 RAG 프롬프트에 넣을 문자열로 변환합니다."""
+    role_labels = {"user": "사용자", "assistant": "AI"}
+    return "\n".join(
+        f"{role_labels.get(message.get('role'), message.get('role', '대화'))}: "
+        f"{message.get('content', '')}"
+        for message in messages or []
+    ) or "이전 대화 없음"
+
+
+def build_rag_search_query(question, chat_history=None):
+    """현재 질문과 이전 사용자 질문을 합쳐 후속 질문 검색을 보강합니다."""
+    previous_questions = [
+        message.get("content", "")
+        for message in get_recent_chat_history(chat_history)
+        if message.get("role") == "user" and message.get("content")
+    ]
+    return "\n".join(dict.fromkeys(previous_questions + [question]))
+
+
+def ask_rag(question, k=3, filters=None, chat_history=None):
     if not question or not question.strip():
         raise ValueError("질문을 입력해 주세요.")
     db, rag_chain = initialize_rag()
+    search_query = build_rag_search_query(question, chat_history)
     docs = db.similarity_search(
-        question,
+        search_query,
         k=k,
         filter=build_metadata_filter(filters),
     )
@@ -146,6 +178,7 @@ def ask_rag(question, k=3, filters=None):
     else:
         answer = rag_chain.invoke({
             "context": context,
+            "chat_history": format_chat_history(chat_history),
             "filters": build_filter_context(filters),
             "question": question,
         })
@@ -408,7 +441,7 @@ ROUTER_PROMPT = ChatPromptTemplate.from_messages([
 - none: 인사, 감사, 자기소개, 기능 문의 등 도구가 필요 없는 질문
 인사말은 별도 직접 응답 분기로 만들지 말고 반드시 none으로 분류하세요.""",
     ),
-    ("human", "{question}"),
+    ("human", "[대화 이력]\n{chat_history}\n\n[현재 질문]\n{question}"),
 ])
 
 
@@ -454,7 +487,7 @@ def is_out_of_scope_question(question: str) -> bool:
     return any(keyword in normalized for keyword in OUT_OF_SCOPE_KEYWORDS)
 
 
-def classify_question(question: str) -> str:
+def classify_question(question: str, chat_history=None) -> str:
     if is_out_of_scope_question(question):
         return "none"
     if is_hospital_question(question):
@@ -463,11 +496,14 @@ def classify_question(question: str) -> str:
     model = load_chat_model()
     if model is not None:
         decision = (ROUTER_PROMPT | model.with_structured_output(RouteDecision)).invoke(
-            {"question": question}
+            {
+                "chat_history": format_chat_history(chat_history),
+                "question": question,
+            }
         )
         return decision.route
 
-    normalized = question.lower()
+    normalized = build_rag_search_query(question, chat_history).lower()
     if any(word in normalized for word in ("병원", "주소", "지역", "동물병원")):
         return "sql"
     if any(word in normalized for word in ("증상", "질병", "아파", "구토", "치료")):
@@ -475,7 +511,7 @@ def classify_question(question: str) -> str:
     return "none"
 
 
-def answer_without_tool(question: str) -> str:
+def answer_without_tool(question: str, chat_history=None) -> str:
     model = load_chat_model()
     if model is None:
         return "안녕하세요. 반려견 건강이나 동물병원에 관해 질문해 주세요."
@@ -484,9 +520,12 @@ def answer_without_tool(question: str) -> str:
             "system",
             "도구가 필요하지 않은 일반 대화에 짧고 자연스럽게 답하세요. 의료 정보를 추측해서 답하지 마세요.",
         ),
-        ("human", "{question}"),
+        ("human", "[대화 이력]\n{chat_history}\n\n[현재 질문]\n{question}"),
     ])
-    return (prompt | model | StrOutputParser()).invoke({"question": question})
+    return (prompt | model | StrOutputParser()).invoke({
+        "chat_history": format_chat_history(chat_history),
+        "question": question,
+    })
 
 
 def infer_life_cycle_filter(question: str) -> str | None:
@@ -530,6 +569,7 @@ def chatbot(
     question: str,
     *,
     top_k: int = 3,
+    chat_history=None,
 ) -> dict[str, Any]:
     """질문을 분류한 뒤 rag, sql, 또는 도구 없는 일반 응답을 실행합니다."""
     if not question or not question.strip():
@@ -538,18 +578,26 @@ def chatbot(
     if is_date_question(question):
         return {"route": "none", "answer": current_date_answer()}
 
-    route = classify_question(question)
+    route = classify_question(question, chat_history=chat_history)
     if route == "rag":
-        rag_result = ask_rag(question, k=top_k, filters=infer_rag_filters(question))
+        contextual_question = build_rag_search_query(question, chat_history)
+        rag_result = ask_rag(
+            question,
+            k=top_k,
+            filters=infer_rag_filters(contextual_question),
+            chat_history=chat_history,
+        )
         return {
             "route": route,
             "answer": rag_result["answer"],
             "evidence_rows": rag_result["evidence_rows"],
         }
     elif route == "sql":
-        answer, hospital_rows = run_sql_search(question)
+        answer, hospital_rows = run_sql_search(
+            build_rag_search_query(question, chat_history)
+        )
     else:
-        answer = answer_without_tool(question)
+        answer = answer_without_tool(question, chat_history=chat_history)
         hospital_rows = []
     return {"route": route, "answer": answer, "hospital_rows": hospital_rows}
 
@@ -602,6 +650,7 @@ def render_page():
         render_hospital_links(st.session_state.get("hospital_rows", []))
         return
 
+    chat_history = get_recent_chat_history(st.session_state.fixing_messages)
     st.session_state.fixing_messages.append({"role": "user", "content": question})
     with st.chat_message("user"):
         st.write(question)
@@ -610,11 +659,18 @@ def render_page():
             with st.spinner(
                 " 답변을 생성하는 중입니다. 잠시만 기다리세요"
             ):
-                result = chatbot(question, top_k=top_k)
+                result = chatbot(
+                    question,
+                    top_k=top_k,
+                    chat_history=chat_history,
+                )
 
             st.write(result["answer"])
             st.session_state.fixing_messages.append(
                 {"role": "assistant", "content": result["answer"]}
+            )
+            st.session_state.fixing_messages = get_recent_chat_history(
+                st.session_state.fixing_messages
             )
 
             st.session_state["hospital_rows"] = result.get("hospital_rows", [])
