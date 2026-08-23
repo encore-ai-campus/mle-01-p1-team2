@@ -28,7 +28,22 @@ render_page_header(
     accent="데이터로 살펴보는 반려동물 생활",
 )
 
-df = pd.read_csv(BASE_DIR / "data" / "training" / "df.csv")
+df_path = BASE_DIR / "data" / "df.csv"
+
+if not df_path.exists() or df_path.stat().st_size <= 2:
+    st.warning(f"그래프 데이터 파일이 비어 있습니다: {df_path}")
+    st.stop()
+
+try:
+    df = pd.read_csv(df_path)
+except pd.errors.EmptyDataError:
+    st.warning(f"그래프 데이터 파일을 읽을 수 없습니다: {df_path}")
+    st.stop()
+required_columns = {"meta.disease", "meta.department"}
+missing_columns = required_columns.difference(df.columns)
+if missing_columns:
+    st.warning(f"데이터에 필요한 컬럼이 없습니다: {', '.join(sorted(missing_columns))}")
+    st.stop()
 
 tab1, tab2, tab3 = st.tabs(
     ["진료과 별 분포", "기타를 제외한 질병 순위", "지역별 동물병원 수"]

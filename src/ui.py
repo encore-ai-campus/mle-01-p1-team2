@@ -12,7 +12,7 @@ NAVIGATION_GROUPS = (
     {
         "label": "소개 페이지",
         "items": (
-            {"path": "pages/home.py", "title": "홈", "icon": "🏠", "default": True},
+            {"path": "pages/home.py", "title": "홈", "icon": "🏠"},
         ),
     },
     {
@@ -24,7 +24,7 @@ NAVIGATION_GROUPS = (
     {
         "label": "서비스",
         "items": (
-            {"path": "pages/rag.py", "title": "질병 문의", "icon": "💬"},
+            {"path": "pages/rag.py", "title": "질병 문의", "icon": "💬", "default": True},
             {"path": "pages/hospital.py", "title": "병원 찾기", "icon": "🏥"},
         ),
     },
@@ -67,6 +67,33 @@ APP_CSS = """
 html, body, [class*="css"] {
     font-family: "Noto Sans KR", "Pretendard", "Apple SD Gothic Neo", sans-serif;
     color: var(--ink);
+}
+
+[data-testid="stAppViewContainer"],
+[data-testid="stMain"],
+[data-testid="stMain"] [data-testid="stMarkdownContainer"],
+[data-testid="stMain"] [data-testid="stCaptionContainer"],
+[data-testid="stMain"] label {
+    color: var(--ink) !important;
+}
+
+[data-testid="stMain"] [data-testid="stMarkdownContainer"] p,
+[data-testid="stMain"] [data-testid="stMarkdownContainer"] li,
+[data-testid="stMain"] [data-testid="stMarkdownContainer"] strong,
+[data-testid="stMain"] [data-testid="stCaptionContainer"] p,
+[data-testid="stMain"] h1,
+[data-testid="stMain"] h2,
+[data-testid="stMain"] h3,
+[data-testid="stMain"] h4 {
+    color: var(--ink) !important;
+}
+
+[data-testid="stMain"] [data-testid="stMarkdownContainer"] * {
+    color: var(--ink) !important;
+}
+
+[data-testid="stMain"] [data-testid="stCaptionContainer"] * {
+    color: var(--muted) !important;
 }
 
 [data-testid="stAppViewContainer"] {
@@ -273,6 +300,34 @@ html, body, [class*="css"] {
     border-color: var(--line);
     border-radius: 13px;
     background: rgba(255, 255, 255, 0.96);
+}
+
+[data-testid="stTextInput"] input,
+[data-testid="stNumberInput"] input,
+[data-testid="stChatInput"] input,
+[data-testid="stChatInput"] textarea {
+    color: #17233f !important;
+    -webkit-text-fill-color: #17233f !important;
+    caret-color: #5943d8 !important;
+}
+
+[data-testid="stChatInputTextArea"] {
+    color: #17233f !important;
+    -webkit-text-fill-color: #17233f !important;
+    caret-color: #5943d8 !important;
+}
+
+html body textarea[data-testid="stChatInputTextArea"] {
+    color: #17233f !important;
+    -webkit-text-fill-color: #17233f !important;
+    caret-color: #5943d8 !important;
+}
+
+[data-testid="stChatInput"] input::placeholder,
+[data-testid="stChatInput"] textarea::placeholder {
+    color: #66728d !important;
+    -webkit-text-fill-color: #66728d !important;
+    opacity: 1 !important;
 }
 
 [data-testid="stButton"] button {

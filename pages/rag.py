@@ -24,6 +24,8 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 CHROMA_DIR = PROJECT_DIR / "data" / "chroma_db"
 TRAINING_DATA_PATH = PROJECT_DIR / "data" / "training" / "df.csv"
 DB_PATH = PROJECT_DIR / "data" / "hospital.db"
+REPORT_COLLECTION_NAME = "pet_analysis"
+REPORT_PDF_NAME = "2025 한국 반려동물 보고서.pdf"
 
 ALL_FILTER = "전체"
 ETC_DISEASE = "기타"
@@ -65,6 +67,19 @@ def load_vector_db():
     )
 
 
+@st.cache_resource(show_spinner=False)
+def load_report_vector_db():
+    embedding_model = HuggingFaceEmbeddings(
+        model_name="jhgan/ko-sroberta-multitask",
+        encode_kwargs={"normalize_embeddings": True},
+    )
+    return Chroma(
+        collection_name=REPORT_COLLECTION_NAME,
+        embedding_function=embedding_model,
+        persist_directory=str(CHROMA_DIR),
+    )
+
+
 def get_openai_api_key():
     api_key = os.getenv("OPENAI_API_KEY")
     if api_key:
@@ -84,7 +99,7 @@ def load_rag_chain():
     if not api_key:
         return None
     return RAG_PROMPT | ChatOpenAI(
-        model="gpt-4o-mini",
+        model="gpt-5.6-luna",
         temperature=0,
         api_key=api_key,
     ) | StrOutputParser()
@@ -185,6 +200,129 @@ def ask_rag(question, k=3, filters=None, chat_history=None):
     return {"answer": answer, "evidence_rows": [doc.metadata for doc in docs]}
 
 
+REPORT_ANALYSIS_TOPICS = {
+    "한국 반려동물 현황": [
+        "한국 반려동물 양육 현황",
+        "향후 양육 희망 반려동물",
+        "선호 품종과 입양처",
+        "관련 법·제도 강화 의견",
+        "펫티켓 성숙도",
+    ],
+    "반려동물의 생활 웰니스": [
+        "반려동물 웰니스 인식",
+        "반려동물의 영양 관리",
+        "반려동물의 운동과 놀이",
+        "나홀로 집에 반려동물 케어",
+        "반려동물과의 여가활동",
+        "반려동물을 위한 건강검진",
+    ],
+    "반려동물의 건강과 질병 관리": [
+        "반려동물의 질병 인식",
+        "반려동물의 질병 예방",
+        "반려동물의 질병 치료 경험",
+    ],
+    "반려동물의 장례와 펫로스": [
+        "반려동물 장례식",
+        "반려동물 장례절차",
+        "반려동물 장례비",
+        "반려동물의 장례문화",
+    ],
+    "반려동물 양육비 지출": [
+        "반려동물 양육비 지출",
+        "반려동물 보험",
+    ],
+    "반려동물의 웰니스 케어": [
+        "웰니스 케어",
+        "웰니스 케어의 필요성",
+        "웰니스 케어 준비 수준",
+    ],
+    "반려동물 독립과 관련된 인식": [
+        "반려동물 독립",
+        "반려동물 독립의 중요성",
+        "반려동물 독립 준비",
+    ],
+}
+REPORT_ANALYSIS_KEYWORDS = (
+    "보고서",
+    "현황",
+    "양육비",
+    "웰니스",
+    "펫로스",
+    "장례",
+    "펫티켓",
+    "입양처",
+    "독립",
+    "분석",
+    "통계",
+    "추이",
+    "비교",
+    "비중",
+    "비율",
+    "증감",
+    "분포",
+    "상관",
+    "세대별",
+    "연도별",
+)
+REPORT_ANALYSIS_PROMPT = ChatPromptTemplate.from_messages([
+    (
+        "system",
+        """2025 한국 반려동물 보고서의 검색 자료만 근거로 분석 결과를 작성하세요.
+분석 항목에 해당하는 수치, 차이, 추이를 우선 정리하고, 자료에 없는 수치나 원인은 추측하지 마세요.
+검색 자료가 부족하면 부족한 부분을 명시하세요. 답변에는 분석 대상, 핵심 결과, 근거 페이지를 포함하세요.
+
+[분석 항목]
+{topics}
+
+[검색 자료]
+{context}""",
+    ),
+    ("human", "{question}"),
+])
+
+
+def get_report_analysis_topics(question: str) -> list[str]:
+    normalized_question = question.replace(" ", "")
+    selected_topics = []
+    for section, topics in REPORT_ANALYSIS_TOPICS.items():
+        if section.replace(" ", "") in normalized_question:
+            selected_topics.append(f"{section}: {', '.join(topics)}")
+            continue
+        matched_topics = [
+            topic for topic in topics if topic.replace(" ", "") in normalized_question
+        ]
+        if matched_topics:
+            selected_topics.append(f"{section}: {', '.join(matched_topics)}")
+    if selected_topics:
+        return selected_topics
+    return [f"{section}: {', '.join(topics)}" for section, topics in REPORT_ANALYSIS_TOPICS.items()]
+
+
+def run_report_analysis(question: str) -> str:
+    report_db = load_report_vector_db()
+    topics = get_report_analysis_topics(question)
+    search_query = f"{' '.join(topics)}\n{question}"
+    docs = report_db.similarity_search(search_query, k=6)
+    context = "\n\n".join(
+        f"[페이지 {doc.metadata.get('page', '?')}] {doc.page_content}"
+        for doc in docs
+    )
+    model = load_chat_model()
+    if model is None:
+        return "분석 자동화에는 OPENAI_API_KEY가 필요합니다."
+    return (REPORT_ANALYSIS_PROMPT | model | StrOutputParser()).invoke({
+        "topics": "\n".join(topics),
+        "context": context or "검색된 보고서 자료가 없습니다.",
+        "question": question,
+    })
+
+
+@tool
+def report_analysis_tool(question: str) -> str:
+    """2025 한국 반려동물 보고서의 목차 항목을 근거로 통계와 추이를 분석합니다."""
+    return run_report_analysis(question)
+
+
 def format_evidence_row(row, index):
     life_cycle = row.get("meta.lifeCycle") or row.get("lifeCycle") or "-"
     department = row.get("meta.department") or row.get("department") or "-"
@@ -278,7 +416,7 @@ def load_chat_model():
     api_key = get_openai_api_key()
     if not api_key:
         return None
-    return ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
+    return ChatOpenAI(model="gpt-5.6-luna", temperature=0, api_key=api_key)
 
 
 def validate_sql(sql: str) -> str:
@@ -427,8 +565,8 @@ def sql_tool(question: str) -> str:
 
 
 class RouteDecision(BaseModel):
-    route: Literal["rag", "sql", "none"] = Field(
-        description="rag: 건강/질병, sql: 병원 검색, none: 인사 및 기타 대화"
+    route: Literal["rag", "sql", "analysis", "none"] = Field(
+        description="rag: 건강/질병, sql: 병원 검색, analysis: 보고서 분석, none: 기타 대화"
     )
 
 
@@ -438,6 +576,7 @@ ROUTER_PROMPT = ChatPromptTemplate.from_messages([
         """질문을 사용할 도구로 분류하세요.
 - rag: 반려견 증상, 질병, 치료, 건강 정보
 - sql: 동물병원 이름, 주소, 지역, 병원 목록 검색
+    - analysis: 2025 한국 반려동물 보고서의 현황, 통계, 추이, 비교, 비중, 분포 분석
 - none: 인사, 감사, 자기소개, 기능 문의 등 도구가 필요 없는 질문
 인사말은 별도 직접 응답 분기로 만들지 말고 반드시 none으로 분류하세요.""",
     ),
@@ -492,6 +631,13 @@ def classify_question(question: str, chat_history=None) -> str:
         return "none"
     if is_hospital_question(question):
         return "sql"
+    normalized_question = "".join(question.lower().split())
+    has_report_topic = any(
+        keyword.replace(" ", "") in normalized_question
+        for keyword in REPORT_ANALYSIS_KEYWORDS
+    )
+    if has_report_topic:
+        return "analysis"
 
     model = load_chat_model()
     if model is not None:
@@ -508,6 +654,11 @@ def classify_question(question: str, chat_history=None) -> str:
         return "sql"
     if any(word in normalized for word in ("증상", "질병", "아파", "구토", "치료")):
         return "rag"
+    if any(
+        keyword.replace(" ", "") in normalized
+        for keyword in REPORT_ANALYSIS_KEYWORDS
+    ):
+        return "analysis"
     return "none"
 
 
@@ -592,6 +743,12 @@ def chatbot(
             "answer": rag_result["answer"],
             "evidence_rows": rag_result["evidence_rows"],
         }
+    elif route == "analysis":
+        return {
+            "route": route,
+            "answer": report_analysis_tool.invoke({"question": question}),
+            "evidence_rows": [],
+        }
     elif route == "sql":
         answer, hospital_rows = run_sql_search(
             build_rag_search_query(question, chat_history)
@@ -623,11 +780,11 @@ def render_page():
     render_page_header(
         "반려견 AI 상담",
         eyebrow="반려동물 건강 정보",
-        description="질병 질문은 RAG로, 병원 검색은 SQLite로 처리합니다.",
+        description="건강 질문은 RAG로, 병원 검색은 SQLite로, 보고서 분석은 분석 도구로 처리합니다.",
         accent="검증된 정보로 함께 살펴봐요",
     )
     st.title("반려견 AI 상담")
-    st.caption("질병 질문은 RAG로, 병원 검색은 SQLite로 처리합니다.")
+    st.caption("건강 질문은 RAG로, 병원 검색은 SQLite로, 보고서 분석은 분석 도구로 처리합니다.")
 
     top_k = st.slider(
         "참고할 근거 수",
@@ -645,6 +802,23 @@ def render_page():
 
     question = st.chat_input(
         "예: 강아지가 계속 구토해요 / 강남구 병원을 알려주세요."
+    )
+    st.markdown(
+        """
+        <style>
+        textarea[data-testid="stChatInputTextArea"] {
+            color: #17233f !important;
+            -webkit-text-fill-color: #17233f !important;
+            caret-color: #5943d8 !important;
+        }
+        textarea[data-testid="stChatInputTextArea"]::placeholder {
+            color: #66728d !important;
+            -webkit-text-fill-color: #66728d !important;
+            opacity: 1 !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
     )
     if not question:
         render_hospital_links(st.session_state.get("hospital_rows", []))
