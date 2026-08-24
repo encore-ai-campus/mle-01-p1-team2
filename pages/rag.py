@@ -77,7 +77,10 @@ def create_embedding_model():
 def load_vector_db():
     return Chroma(
         collection_name="pet_care",
-        embedding_function=create_embedding_model(),
+        embedding_function=HuggingFaceEmbeddings(
+            model_name="jhgan/ko-sroberta-multitask",
+            encode_kwargs={"normalize_embeddings": True},
+        ),
         persist_directory=str(CHROMA_DIR),
     )
 

@@ -46,7 +46,7 @@ if missing_columns:
     st.stop()
 
 tab1, tab2, tab3 = st.tabs(
-    ["진료과 별 분포", "기타를 제외한 질병 순위", "지역별 동물병원 수"]
+    ["기타를 제외한 질병 순위", "진료과 별 분포", "지역별 동물병원 수"]
 )
 
 with tab1:
