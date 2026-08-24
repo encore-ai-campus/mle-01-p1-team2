@@ -12,7 +12,7 @@ NAVIGATION_GROUPS = (
     {
         "label": "소개 페이지",
         "items": (
-            {"path": "pages/home.py", "title": "홈", "icon": "🏠"},
+            {"path": "pages/home.py", "title": "홈", "icon": "🏠", "default": True},
         ),
     },
     {
@@ -24,7 +24,7 @@ NAVIGATION_GROUPS = (
     {
         "label": "서비스",
         "items": (
-            {"path": "pages/rag.py", "title": "질병 문의", "icon": "💬", "default": True},
+            {"path": "pages/rag.py", "title": "질병 문의", "icon": "💬"},
             {"path": "pages/hospital.py", "title": "병원 찾기", "icon": "🏥"},
         ),
     },
