@@ -16,6 +16,8 @@ from src.ui import (
 
 os.environ.setdefault("ARROW_DEFAULT_MEMORY_POOL", "system")
 
+AUTO_HERO_REFRESH_INTERVAL = "5s"
+HOME_HERO_INDEX_KEY = "home_hero_index"
 LOCAL_HERO_IMAGE = Path(__file__).with_name("화면 캡처 2026-08-20 110623.png")
 HERO_IMAGE_LABELS = (
     "따뜻한 반려동물의 하루",
@@ -57,9 +59,8 @@ def render_service_cards() -> None:
         ("💬", "질병 문의", "반려견의 증상과 질병에 대해 근거 있는 정보를 확인해보세요."),
         ("📍", "지역별 동물 병원 찾기", "내 위치를 기준으로 가까운 동물병원을 빠르게 찾아보세요."),
         ("▥", "통계 대시보드", "반려동물 관련 최신 통계와 트렌드를 한눈에 살펴보세요."),
-        ("⇩", "데이터 다운로드", "연구와 분석을 위한 데이터를 내려받아 활용해보세요."),
     )
-    columns = st.columns(4)
+    columns = st.columns(len(services))
     for column, (icon, title, body) in zip(columns, services):
         with column:
             st.markdown(
@@ -74,17 +75,36 @@ def render_service_cards() -> None:
             )
 
 
+@st.fragment(run_every=AUTO_HERO_REFRESH_INTERVAL)
+def render_auto_hero_image() -> None:
+    hero_index = st.session_state.get(HOME_HERO_INDEX_KEY, 0)
+    image_index = hero_index % len(HERO_IMAGE_SOURCES)
+    image_bytes, mime_type = load_hero_image(image_index)
+    image_uri = as_data_uri(image_bytes, mime_type)
+    image_label = HERO_IMAGE_LABELS[image_index % len(HERO_IMAGE_LABELS)]
+
+    st.markdown(
+        f"""
+        <div class="home-hero__visual">
+            <img class="home-hero__image" src="{image_uri}" alt="반려동물 히어로 이미지">
+            <div class="home-hero__image-meta">{image_label}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.session_state[HOME_HERO_INDEX_KEY] = next_hero_index(
+        image_index,
+        len(HERO_IMAGE_SOURCES),
+    )
+
+
 def render_home_page() -> None:
     apply_app_theme()
 
     if "messages" not in st.session_state:
         st.session_state.messages = []
-    if "home_hero_index" not in st.session_state:
-        st.session_state.home_hero_index = 0
-
-    hero_index = st.session_state.home_hero_index
-    image_bytes, mime_type = load_hero_image(hero_index)
-    image_uri = as_data_uri(image_bytes, mime_type)
+    if HOME_HERO_INDEX_KEY not in st.session_state:
+        st.session_state[HOME_HERO_INDEX_KEY] = 0
 
     copy_column, image_column = st.columns([1.08, 0.92], gap="large")
     with copy_column:
@@ -94,7 +114,7 @@ def render_home_page() -> None:
                 <div class="page-kicker"><span class="page-kicker__dot"></span>반려동물 건강 정보 플랫폼</div>
                 <h1 class="home-hero__title">반려동물의 건강,<br>데이터로 지키는 <span>따뜻한 동행</span></h1>
                 <p class="home-hero__body">
-                    동물 구조대는 반려견 보호자가 건강 정보를 찾고 가까운 동물 병원을
+                    라그도그는 반려견 보호자가 건강 정보를 찾고 가까운 동물 병원을
                     확인할 수 있도록 돕는 데이터 기반 반려동물 케어 서비스입니다.
                     591만 반려동물 가구 시대, 필요한 정보를 더 빠르게 확인해보세요.
                 </p>
@@ -109,23 +129,7 @@ def render_home_page() -> None:
         )
 
     with image_column:
-        st.markdown(
-            f"""
-            <div class="home-hero__visual">
-                <img class="home-hero__image" src="{image_uri}" alt="반려동물 히어로 이미지">
-                <div class="home-hero__image-meta">{HERO_IMAGE_LABELS[hero_index]}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        st.markdown('<div class="home-hero__control">', unsafe_allow_html=True)
-        if st.button("다른 이미지 보기 →", key="home_next_hero"):
-            st.session_state.home_hero_index = next_hero_index(
-                hero_index,
-                len(HERO_IMAGE_SOURCES),
-            )
-            st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
+        render_auto_hero_image()
 
     render_stat_cards(
         list(HOME_STATS)

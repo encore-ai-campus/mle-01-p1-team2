@@ -4,7 +4,7 @@ import streamlit as st
 
 from src.ui import NAVIGATION_GROUPS, apply_app_theme, render_footer, render_sidebar
 
-st.set_page_config(page_title="동물 구조대", page_icon=":material/pets:", layout="wide")
+st.set_page_config(page_title="라그도그", page_icon=":material/pets:", layout="wide")
 apply_app_theme()
 render_sidebar()
 

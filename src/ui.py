@@ -113,12 +113,13 @@ html, body, [class*="css"] {
 }
 
 [data-testid="stSidebar"] {
-    background: rgba(255, 255, 255, 0.92);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(249, 250, 255, 0.96) 100%);
     border-right: 1px solid var(--line);
 }
 
 [data-testid="stSidebar"] > div:first-child {
-    padding: 1.65rem 1.15rem 1.2rem;
+    padding: 1.65rem 1.05rem 1.2rem;
 }
 
 [data-testid="stSidebarNav"] {
@@ -160,18 +161,26 @@ html, body, [class*="css"] {
 .pet-brand {
     display: flex;
     align-items: center;
-    gap: 0.7rem;
-    padding: 0.2rem 0.45rem 0.75rem;
+    gap: 0.78rem;
+    margin-bottom: 1.15rem;
+    padding: 0.85rem 0.75rem;
+    border: 1px solid rgba(232, 228, 255, 0.95);
+    border-radius: 18px;
+    background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(246, 244, 255, 0.95));
+    box-shadow: 0 14px 30px rgba(52, 62, 112, 0.08);
 }
 
 .pet-brand__mark {
     display: grid;
-    width: 2.65rem;
-    height: 2.65rem;
+    width: 2.75rem;
+    height: 2.75rem;
     place-items: center;
-    border-radius: 16px;
-    background: linear-gradient(145deg, #ffe6bb, #f6bd8c);
-    box-shadow: 0 8px 18px rgba(239, 169, 113, 0.24);
+    border-radius: 15px;
+    background:
+        radial-gradient(circle at 35% 28%, #ffffff 0 16%, transparent 17%),
+        linear-gradient(145deg, #ffe9bd, #f6bd8c);
+    box-shadow: 0 10px 22px rgba(239, 169, 113, 0.26);
     font-size: 1.38rem;
 }
 
@@ -185,38 +194,112 @@ html, body, [class*="css"] {
 .pet-brand__sub {
     margin-top: 0.1rem;
     color: var(--soft-muted);
-    font-size: 0.68rem;
+    font-size: 0.7rem;
     font-weight: 600;
 }
 
-.sidebar-note {
-    margin: 3.5rem 0 0.35rem;
-    padding: 1.25rem 1rem;
+.sidebar-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.36rem;
+    margin: 0 0.75rem 0.95rem;
+    padding: 0.34rem 0.62rem;
+    border: 1px solid #d8efe6;
+    border-radius: 999px;
+    background: #eefaf5;
+    color: #277354;
+    font-size: 0.68rem;
+    font-weight: 800;
+}
+
+.sidebar-status__dot {
+    width: 0.44rem;
+    height: 0.44rem;
+    border-radius: 999px;
+    background: #37c785;
+    box-shadow: 0 0 0 4px rgba(55, 199, 133, 0.16);
+}
+
+.sidebar-metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.55rem;
+    margin: 0 0.1rem 1.2rem;
+}
+
+.sidebar-metric {
+    min-height: 4.1rem;
+    padding: 0.82rem 0.72rem;
     border: 1px solid #ecebfa;
-    border-radius: 18px;
-    background: linear-gradient(145deg, #ffffff, #f8f7ff);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.86);
+}
+
+.sidebar-metric__value {
+    color: var(--ink);
+    font-size: 0.9rem;
+    font-weight: 850;
+}
+
+.sidebar-metric__label {
+    margin-top: 0.24rem;
+    color: var(--soft-muted);
+    font-size: 0.66rem;
+    font-weight: 700;
+}
+
+.sidebar-note {
+    position: relative;
+    overflow: hidden;
+    margin: 1.25rem 0.1rem 0.35rem;
+    padding: 1.15rem 1rem 1rem;
+    border: 1px solid #e8e4ff;
+    border-radius: 16px;
+    background:
+        linear-gradient(145deg, #ffffff 0%, #f8f7ff 62%, #fff8dc 100%);
+    box-shadow: 0 14px 30px rgba(52, 62, 112, 0.07);
+}
+
+.sidebar-note::after {
+    content: "";
+    position: absolute;
+    right: -1.9rem;
+    bottom: -1.9rem;
+    width: 5rem;
+    height: 5rem;
+    border-radius: 50%;
+    background: rgba(217, 245, 233, 0.82);
 }
 
 .sidebar-note__title {
+    position: relative;
+    z-index: 1;
     color: var(--ink);
-    font-size: 0.87rem;
+    font-size: 0.88rem;
     font-weight: 800;
-    line-height: 1.55;
+    line-height: 1.45;
 }
 
 .sidebar-note__body {
+    position: relative;
+    z-index: 1;
     margin-top: 0.5rem;
     color: var(--muted);
-    font-size: 0.73rem;
+    font-size: 0.72rem;
     line-height: 1.65;
 }
 
-.sidebar-note__heart {
-    display: block;
-    margin-top: 0.45rem;
-    color: #ff99ae;
-    font-size: 1.35rem;
-    text-align: right;
+.sidebar-note__tag {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    margin-top: 0.78rem;
+    padding: 0.34rem 0.58rem;
+    border-radius: 999px;
+    background: rgba(123, 97, 255, 0.1);
+    color: var(--brand-purple-dark);
+    font-size: 0.66rem;
+    font-weight: 800;
 }
 
 .page-kicker {
@@ -642,14 +725,28 @@ def render_sidebar(st_module: Any | None = None) -> None:
         <div class="pet-brand">
             <div class="pet-brand__mark">🐾</div>
             <div>
-                <div class="pet-brand__name">동물 구조대</div>
+                <div class="pet-brand__name">라그도그</div>
                 <div class="pet-brand__sub">반려동물 건강 정보 플랫폼</div>
             </div>
         </div>
+        <div class="sidebar-status">
+            <span class="sidebar-status__dot"></span>
+            데이터 기반 상담 준비 완료
+        </div>
+        <div class="sidebar-metrics">
+            <div class="sidebar-metric">
+                <div class="sidebar-metric__value">591만</div>
+                <div class="sidebar-metric__label">반려동물 가구</div>
+            </div>
+            <div class="sidebar-metric">
+                <div class="sidebar-metric__value">546만</div>
+                <div class="sidebar-metric__label">반려견</div>
+            </div>
+        </div>
         <div class="sidebar-note">
-            <div class="sidebar-note__title">반려동물의<br>건강한 삶을 위한 첫걸음</div>
-            <div class="sidebar-note__body">데이터로 더 나은 진료와 돌봄을 만듭니다.</div>
-            <span class="sidebar-note__heart">♥</span>
+            <div class="sidebar-note__title">반려동물의 건강한 삶을 위한 첫걸음</div>
+            <div class="sidebar-note__body">증상 정보, 병원 위치, 반려동물 통계를 한곳에서 확인합니다.</div>
+            <span class="sidebar-note__tag">PetCare AI</span>
         </div>
         """,
         unsafe_allow_html=True,
@@ -707,6 +804,6 @@ def render_stat_cards(stats: list[dict[str, str]], st_module: Any | None = None)
 def render_footer(st_module: Any | None = None) -> None:
     """Render the small product footer shared by all pages."""
     _resolve_streamlit(st_module).markdown(
-        '<div class="app-footer">🐾 동물 구조대 · 데이터와 기술로 더 나은 반려동물 케어를 만듭니다.</div>',
+        '<div class="app-footer">🐾 라그도그 · 데이터와 기술로 더 나은 반려동물 케어를 만듭니다.</div>',
         unsafe_allow_html=True,
     )
