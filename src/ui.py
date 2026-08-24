@@ -338,8 +338,14 @@ html, body, [class*="css"] {
     line-height: 1.18;
 }
 
-.page-header h1 .page-header__accent {
+.page-header__accent {
+    display: block;
+    margin-top: 0.55rem;
     color: var(--brand-purple);
+    font-size: 1.02rem;
+    font-weight: 700;
+    letter-spacing: 0;
+    line-height: 1.55;
 }
 
 .page-header p {
@@ -348,6 +354,7 @@ html, body, [class*="css"] {
     color: var(--muted);
     font-size: 0.98rem;
     line-height: 1.8;
+    white-space: pre-line;
 }
 
 .surface-card,
@@ -767,7 +774,7 @@ def render_page_header(
     safe_title = escape(title)
     safe_description = escape(description)
     accent_markup = (
-        f'<span class="page-header__accent">{escape(accent)}</span>'
+        f'<div class="page-header__accent">{escape(accent)}</div>'
         if accent
         else ""
     )
@@ -775,7 +782,8 @@ def render_page_header(
         f"""
         <div class="page-header">
             <div class="page-kicker"><span class="page-kicker__dot"></span>{safe_eyebrow}</div>
-            <h1>{safe_title}{accent_markup}</h1>
+            <h1>{safe_title}</h1>
+            {accent_markup}
             <p>{safe_description}</p>
         </div>
         """,

@@ -825,7 +825,10 @@ def render_page():
     render_page_header(
         "반려견 AI 상담",
         eyebrow="반려동물 건강 정보",
-        description="건강 질문은 RAG로, 병원 검색은 SQLite로, 보고서 분석은 분석 도구로 처리합니다.",
+        description=(
+            "건강 질문은 RAG로, 병원 검색은 SQLite로, 보고서 분석은 분석 도구로 처리합니다.\n"
+            "분석 추천 항목: 한국 반려동물 현황, 웰니스, 양육 경험, 생애 지출, 자금 관리, 펫로스, 비만"
+        ),
         accent="검증된 정보로 함께 살펴봐요",
     )
 
