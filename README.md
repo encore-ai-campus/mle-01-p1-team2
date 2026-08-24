@@ -102,8 +102,13 @@ SQLite 검색
 ## 📊 데이터
 
 - AI Hub 반려견 성장 및 질병 관련 말뭉치
+  https://aihub.or.kr/
+  
 - KB 2025 반려동물 보고서
+  https://www.kbfg.com/kbresearch/index.do
+  
 - 공공데이터포털 동물병원 데이터
+  https://www.data.go.kr/index.do
 
 ## 🚀 실행 방법
 
@@ -168,31 +173,25 @@ uv run python -m unittest discover -s tests -v
 
 ## 👤 담당 업무
 
-- ...
-- ...
-- ...
+- 백관민:
+- 오현탁:
+- 봉기람:
+- 차성종:
 
 ## 📈 결과
 
 - RAG 답변 유사도 평가 결과: `notebooks/docs/rag_answer_similarity_evaluation.md`
 - 평가 산출물: `notebooks/outputs/`
-- ...
 
 ## 🔧 트러블슈팅
 
 ### 문제 1
 
-문제 → OpenAI API Key가 없을 때 답변 생성이 제한됨  
-원인 → `.streamlit/secrets.toml` 또는 환경 변수에 `OPENAI_API_KEY`가 설정되지 않음  
-해결 → secrets 파일 또는 환경 변수에 API Key 추가
-
-### 문제 2
-
 문제 → RAG 검색 결과가 질문 의도와 다르게 나옴  
 원인 → 검색 쿼리, 메타데이터 필터, 벡터 DB 품질의 영향  
 해결 → validation 데이터 기반 검색 성능 평가 및 chunking 방식 개선
 
-### 문제 3
+### 문제 2
 
 문제 → ...
 
