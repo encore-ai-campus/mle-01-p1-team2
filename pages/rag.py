@@ -22,7 +22,7 @@ from src.ui import apply_app_theme, render_page_header
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 CHROMA_DIR = PROJECT_DIR / "data" / "chroma_db"
 DB_PATH = PROJECT_DIR / "data" / "hospital.db"
-REPORT_COLLECTION_NAME = "pet_analysis"
+REPORT_COLLECTION_NAME = "pet_analysis_1024"
 
 ALL_FILTER = "전체"
 ETC_DISEASE = "기타"
@@ -68,7 +68,7 @@ RAG_PROMPT = ChatPromptTemplate.from_messages([
 @st.cache_resource(show_spinner=False)
 def create_embedding_model():
     return HuggingFaceEmbeddings(
-        model_name="jhgan/ko-sroberta-multitask",
+        model_name="BAAI/bge-m3",
         encode_kwargs={"normalize_embeddings": True},
     )
 
