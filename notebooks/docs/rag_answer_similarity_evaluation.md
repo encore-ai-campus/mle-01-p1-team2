@@ -1,3 +1,9 @@
+# 데이터 분석 
+![image](petcare-chart.png)
+![image](petcare-chart-1.png)
+![image](petcare-chart-2.png)
+
+
 # RAG 답변 유사도 평가
 
 ## 요약
