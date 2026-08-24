@@ -1,4 +1,3 @@
-import csv
 import json
 import os
 import re
@@ -22,16 +21,28 @@ from src.ui import apply_app_theme, render_page_header
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 CHROMA_DIR = PROJECT_DIR / "data" / "chroma_db"
-TRAINING_DATA_PATH = PROJECT_DIR / "data" / "training" / "df.csv"
 DB_PATH = PROJECT_DIR / "data" / "hospital.db"
 REPORT_COLLECTION_NAME = "pet_analysis"
-REPORT_PDF_NAME = "2025 한국 반려동물 보고서.pdf"
 
 ALL_FILTER = "전체"
 ETC_DISEASE = "기타"
 NONE_DISEASE = "None"
 DEPARTMENT_OPTIONS = [ALL_FILTER, "내과", "외과", "안과", "치과", "피부과"]
 SHORT_TERM_MEMORY_TURNS = 6
+DEFAULT_RAG_TOP_K = 3
+MIN_RAG_TOP_K = 1
+MAX_RAG_TOP_K = 5
+REPORT_ANALYSIS_TOP_K = 6
+SINGLE_HOSPITAL_LIMIT = 1
+DEFAULT_HOSPITAL_LIMIT = 10
+PUPPY_MAX_MONTHS = 12
+PUPPY_MAX_YEARS = 1
+ADULT_MIN_YEARS = 2
+ADULT_MAX_YEARS = 6
+CHAT_MESSAGES_STATE_KEY = "fixing_messages"
+HOSPITAL_ROWS_STATE_KEY = "hospital_rows"
+SELECTED_HOSPITAL_ID_STATE_KEY = "selected_hospital_id"
+RAG_TOP_K_SLIDER_KEY = "rag_top_k"
 
 
 load_dotenv(PROJECT_DIR / ".env")
@@ -55,27 +66,27 @@ RAG_PROMPT = ChatPromptTemplate.from_messages([
 
 
 @st.cache_resource(show_spinner=False)
-def load_vector_db():
-    embedding_model = HuggingFaceEmbeddings(
+def create_embedding_model():
+    return HuggingFaceEmbeddings(
         model_name="jhgan/ko-sroberta-multitask",
         encode_kwargs={"normalize_embeddings": True},
     )
+
+
+@st.cache_resource(show_spinner=False)
+def load_vector_db():
     return Chroma(
         collection_name="pet_care",
-        embedding_function=embedding_model,
+        embedding_function=create_embedding_model(),
         persist_directory=str(CHROMA_DIR),
     )
 
 
 @st.cache_resource(show_spinner=False)
 def load_report_vector_db():
-    embedding_model = HuggingFaceEmbeddings(
-        model_name="jhgan/ko-sroberta-multitask",
-        encode_kwargs={"normalize_embeddings": True},
-    )
     return Chroma(
         collection_name=REPORT_COLLECTION_NAME,
-        embedding_function=embedding_model,
+        embedding_function=create_embedding_model(),
         persist_directory=str(CHROMA_DIR),
     )
 
@@ -174,30 +185,37 @@ def build_rag_search_query(question, chat_history=None):
     return "\n".join(dict.fromkeys(previous_questions + [question]))
 
 
-def ask_rag(question, k=3, filters=None, chat_history=None):
+def format_rag_context(retrieved_docs):
+    return "\n\n".join(
+        f"질문: {doc.page_content}\n답변: {doc.metadata.get('qa.output', '')}"
+        for doc in retrieved_docs
+    )
+
+
+def ask_rag(question, k=DEFAULT_RAG_TOP_K, filters=None, chat_history=None):
     if not question or not question.strip():
         raise ValueError("질문을 입력해 주세요.")
     db, rag_chain = initialize_rag()
     search_query = build_rag_search_query(question, chat_history)
-    docs = db.similarity_search(
+    retrieved_docs = db.similarity_search(
         search_query,
         k=k,
         filter=build_metadata_filter(filters),
     )
-    context = "\n\n".join(
-        f"질문: {doc.page_content}\n답변: {doc.metadata.get('qa.output', '')}"
-        for doc in docs
-    )
+    prompt_context = format_rag_context(retrieved_docs)
     if rag_chain is None:
         answer = "유사도 검색은 성공했습니다. 답변 생성에는 OPENAI_API_KEY가 필요합니다."
     else:
         answer = rag_chain.invoke({
-            "context": context,
+            "context": prompt_context,
             "chat_history": format_chat_history(chat_history),
             "filters": build_filter_context(filters),
             "question": question,
         })
-    return {"answer": answer, "evidence_rows": [doc.metadata for doc in docs]}
+    return {
+        "answer": answer,
+        "evidence_rows": [doc.metadata for doc in retrieved_docs],
+    }
 
 
 REPORT_ANALYSIS_TOPICS = {
@@ -283,6 +301,7 @@ REPORT_ANALYSIS_PROMPT = ChatPromptTemplate.from_messages([
 보고서 검색 자료만 근거로 분석 결과를 작성하세요.
 분석 항목에 해당하는 수치, 차이, 추이를 우선 정리하고, 자료에 없는 수치나 원인은 추측하지 마세요.
 검색 자료가 부족하면 부족한 부분을 명시하세요. 답변에는 분석 대상, 핵심 결과, 근거 페이지를 포함하세요.
+검색 데이터 밖 내용은 말하지 마세요.
 
 [분석 항목]
 {topics}
@@ -311,21 +330,25 @@ def get_report_analysis_topics(question: str) -> list[str]:
     return [f"{section}: {', '.join(topics)}" for section, topics in REPORT_ANALYSIS_TOPICS.items()]
 
 
+def format_report_context(report_docs):
+    return "\n\n".join(
+        f"[페이지 {doc.metadata.get('page', '?')}] {doc.page_content}"
+        for doc in report_docs
+    )
+
+
 def run_report_analysis(question: str) -> str:
     report_db = load_report_vector_db()
     topics = get_report_analysis_topics(question)
     search_query = f"{' '.join(topics)}\n{question}"
-    docs = report_db.similarity_search(search_query, k=6)
-    context = "\n\n".join(
-        f"[페이지 {doc.metadata.get('page', '?')}] {doc.page_content}"
-        for doc in docs
-    )
+    report_docs = report_db.similarity_search(search_query, k=REPORT_ANALYSIS_TOP_K)
+    prompt_context = format_report_context(report_docs)
     model = load_chat_model()
     if model is None:
         return "분석 자동화에는 OPENAI_API_KEY가 필요합니다."
     return (REPORT_ANALYSIS_PROMPT | model | StrOutputParser()).invoke({
         "topics": "\n".join(topics),
-        "context": context or "검색된 보고서 자료가 없습니다.",
+        "context": prompt_context or "검색된 보고서 자료가 없습니다.",
         "question": question,
     })
 
@@ -350,7 +373,7 @@ def format_evidence_row(row, index):
 @tool
 def rag_tool(question: str) -> str:
     """반려견의 증상, 질병, 치료 등 건강 관련 질문에 학습 데이터를 검색해 답합니다."""
-    result = ask_rag(question, k=3)
+    result = ask_rag(question, k=DEFAULT_RAG_TOP_K)
     return result["answer"]
 
 
@@ -401,29 +424,6 @@ LOCATION_ALIASES = {
 }
 
 
-
-SQL_ANSWER_PROMPT = ChatPromptTemplate.from_messages([
-    (
-        "system",
-        "검색된 동물병원 데이터만 근거로 간결하게 답하세요. 검색 결과가 없으면 찾지 못했다고 말하세요.",
-    ),
-    ("human", "질문: {question}\n검색 결과: {rows}"),
-])
-
-COUNT_QUERY_KEYWORDS = ("몇개", "몇 개", "개수", "몇곳", "몇 곳", "몇군데", "몇 군데")
-HOSPITAL_QUERY_KEYWORDS = ("동물병원", "병원 주소", "병원 목록", "병원 검색")
-LOCATION_ALIASES = {
-    "서울시": "서울특별시",
-    "부산시": "부산광역시",
-    "대구시": "대구광역시",
-    "인천시": "인천광역시",
-    "광주시": "광주광역시",
-    "대전시": "대전광역시",
-    "울산시": "울산광역시",
-    "세종시": "세종특별자치시",
-}
-
-
 @st.cache_resource(show_spinner=False)
 def load_chat_model():
     api_key = get_openai_api_key()
@@ -454,48 +454,77 @@ def validate_sql(sql: str) -> str:
     return cleaned
 
 
+def build_location_conditions(location_keywords: list[str]) -> str:
+    return " OR ".join(
+        "new_address LIKE ? OR old_address LIKE ?"
+        for _ in location_keywords
+    )
+
+
+def should_limit_to_one_hospital(question: str) -> bool:
+    return (
+        not is_count_query(question)
+        and (
+            is_single_hospital_query(question)
+            or is_nearest_hospital_query(question)
+        )
+    )
+
+
+def get_hospital_result_limit(question: str) -> int:
+    if should_limit_to_one_hospital(question):
+        return SINGLE_HOSPITAL_LIMIT
+    return DEFAULT_HOSPITAL_LIMIT
+
+
+def force_sql_limit_one(sql: str) -> str:
+    if re.search(r"\blimit\s+\d+", sql, flags=re.IGNORECASE):
+        return re.sub(
+            r"\blimit\s+\d+",
+            f"LIMIT {SINGLE_HOSPITAL_LIMIT}",
+            sql,
+            flags=re.IGNORECASE,
+        )
+    return f"{sql} LIMIT {SINGLE_HOSPITAL_LIMIT}"
+
+
 def fallback_sql(question: str) -> str:
     """LLM 키가 없을 때도 기본적인 지역 병원 검색은 수행합니다."""
-    keywords = extract_search_parameters(question)
+    location_keywords = extract_search_parameters(question)
     if is_count_query(question):
-        if not keywords:
+        if not location_keywords:
             return "SELECT COUNT(*) AS count FROM hospital"
-        conditions = " OR ".join(
-            "new_address LIKE ? OR old_address LIKE ?" for _ in keywords
-        )
+        conditions = build_location_conditions(location_keywords)
         return f"SELECT COUNT(*) AS count FROM hospital WHERE {conditions}"
 
-    if not keywords:
-        limit = 1 if is_single_hospital_query(question) or is_nearest_hospital_query(question) else 10
+    limit = get_hospital_result_limit(question)
+    if not location_keywords:
         return f"SELECT ids, name, new_address, x_coor, y_coor, old_address FROM hospital LIMIT {limit}"
-    conditions = " OR ".join(
-        "new_address LIKE ? OR old_address LIKE ?" for _ in keywords
-    )
-    limit = 1 if is_single_hospital_query(question) or is_nearest_hospital_query(question) else 10
+    conditions = build_location_conditions(location_keywords)
     return f"SELECT ids, name, new_address, x_coor, y_coor, old_address FROM hospital WHERE {conditions} LIMIT {limit}"
 
 
 def is_count_query(question: str) -> bool:
-    normalized = "".join(question.lower().split())
-    return any("".join(keyword.split()) in normalized for keyword in COUNT_QUERY_KEYWORDS)
+    compact_question = "".join(question.lower().split())
+    return any("".join(keyword.split()) in compact_question for keyword in COUNT_QUERY_KEYWORDS)
 
 
 def is_single_hospital_query(question: str) -> bool:
-    normalized = "".join(question.lower().split())
-    return any("".join(keyword.split()) in normalized for keyword in SINGLE_HOSPITAL_KEYWORDS)
+    compact_question = "".join(question.lower().split())
+    return any("".join(keyword.split()) in compact_question for keyword in SINGLE_HOSPITAL_KEYWORDS)
 
 
 def is_nearest_hospital_query(question: str) -> bool:
-    normalized = "".join(question.lower().split())
-    return any("".join(keyword.split()) in normalized for keyword in NEAREST_HOSPITAL_KEYWORDS)
+    compact_question = "".join(question.lower().split())
+    return any("".join(keyword.split()) in compact_question for keyword in NEAREST_HOSPITAL_KEYWORDS)
 
 
 def is_hospital_question(question: str) -> bool:
-    normalized = " ".join(question.lower().split())
-    compact = "".join(normalized.split())
-    if "동물병원" in compact:
+    normalized_question = " ".join(question.lower().split())
+    compact_question = "".join(normalized_question.split())
+    if "동물병원" in compact_question:
         return True
-    return any(keyword in normalized for keyword in HOSPITAL_QUERY_KEYWORDS)
+    return any(keyword in normalized_question for keyword in HOSPITAL_QUERY_KEYWORDS)
 
 
 def extract_search_parameters(question: str) -> list[str]:
@@ -514,26 +543,44 @@ def extract_search_parameters(question: str) -> list[str]:
     return list(dict.fromkeys(LOCATION_ALIASES.get(location, location) for location in locations))
 
 
-def format_sql_result(data: list[dict]) -> str:
-    if len(data) == 1 and "count" in data[0]:
-        return f"조건에 맞는 동물병원은 {data[0]['count']}개입니다."
-    if not data:
+def format_sql_result(hospital_rows: list[dict]) -> str:
+    if len(hospital_rows) == 1 and "count" in hospital_rows[0]:
+        return f"조건에 맞는 동물병원은 {hospital_rows[0]['count']}개입니다."
+    if not hospital_rows:
         return "조건에 맞는 동물병원을 찾지 못했습니다."
 
-    lines = [f"조건에 맞는 동물병원 {len(data)}곳입니다."]
-    for index, row in enumerate(data, start=1):
+    lines = [f"조건에 맞는 동물병원 {len(hospital_rows)}곳입니다."]
+    for index, row in enumerate(hospital_rows, start=1):
         lines.append(f"{index}. {row.get('name', '이름 없음')}")
         address = row.get("new_address") or row.get("old_address") or "주소 없음"
         lines.append(f"   주소: {address}")
     return "\n".join(lines)
 
 
+def execute_hospital_sql(sql: str, location_keywords: list[str]) -> list[dict]:
+    connection = sqlite3.connect(DB_PATH)
+    connection.row_factory = sqlite3.Row
+    try:
+        if location_keywords and "?" in sql:
+            sql_parameters = [
+                f"%{keyword}%"
+                for keyword in location_keywords
+                for _ in range(2)
+            ]
+            rows = connection.execute(sql, sql_parameters).fetchall()
+        else:
+            rows = connection.execute(sql).fetchall()
+    finally:
+        connection.close()
+    return [dict(row) for row in rows]
+
+
 def run_sql_search(question: str) -> tuple[str, list[dict]]:
     """지역, 주소, 병원명으로 동물병원 SQLite 데이터를 검색합니다."""
-    parameters = extract_search_parameters(question)
+    location_keywords = extract_search_parameters(question)
 
     # 지역 조건은 정해진 SQL로 처리해 SQL 생성·답변용 LLM 호출을 줄입니다.
-    use_fallback = bool(parameters) or is_count_query(question)
+    use_fallback = bool(location_keywords) or is_count_query(question)
     model = None if use_fallback else load_chat_model()
     if model is None:
         sql = fallback_sql(question)
@@ -543,31 +590,15 @@ def run_sql_search(question: str) -> tuple[str, list[dict]]:
         )
 
     sql = validate_sql(sql)
-    if (
-        is_single_hospital_query(question) or is_nearest_hospital_query(question)
-    ) and not is_count_query(question):
-        if re.search(r"\blimit\s+\d+", sql, flags=re.IGNORECASE):
-            sql = re.sub(r"\blimit\s+\d+", "LIMIT 1", sql, flags=re.IGNORECASE)
-        else:
-            sql = f"{sql} LIMIT 1"
-    connection = sqlite3.connect(DB_PATH)
-    connection.row_factory = sqlite3.Row
-    try:
-        if parameters and "?" in sql:
-            values = [f"%{word}%" for word in parameters for _ in range(2)]
-            rows = connection.execute(sql, values).fetchall()
-        else:
-            rows = connection.execute(sql).fetchall()
-    finally:
-        connection.close()
-
-    data = [dict(row) for row in rows]
+    if should_limit_to_one_hospital(question):
+        sql = force_sql_limit_one(sql)
+    hospital_rows = execute_hospital_sql(sql, location_keywords)
     if model is None:
-        return format_sql_result(data), data
+        return format_sql_result(hospital_rows), hospital_rows
     answer = (SQL_ANSWER_PROMPT | model | StrOutputParser()).invoke(
-        {"question": question, "rows": json.dumps(data, ensure_ascii=False)}
+        {"question": question, "rows": json.dumps(hospital_rows, ensure_ascii=False)}
     )
-    return answer, data
+    return answer, hospital_rows
 
 
 @tool
@@ -662,13 +693,13 @@ def classify_question(question: str, chat_history=None) -> str:
         )
         return decision.route
 
-    normalized = build_rag_search_query(question, chat_history).lower()
-    if any(word in normalized for word in ("병원", "주소", "지역", "동물병원")):
+    contextual_question = build_rag_search_query(question, chat_history).lower()
+    if any(word in contextual_question for word in ("병원", "주소", "지역", "동물병원")):
         return "sql"
-    if any(word in normalized for word in ("증상", "질병", "아파", "구토", "치료")):
+    if any(word in contextual_question for word in ("증상", "질병", "아파", "구토", "치료")):
         return "rag"
     if any(
-        keyword.replace(" ", "") in normalized
+        keyword.replace(" ", "") in contextual_question
         for keyword in REPORT_ANALYSIS_KEYWORDS
     ):
         return "analysis"
@@ -696,24 +727,24 @@ def infer_life_cycle_filter(question: str) -> str | None:
     for age_text, unit in AGE_PATTERN.findall(question):
         age = int(age_text)
         if unit == "개월":
-            return "자견" if age <= 12 else "성견"
-        if age <= 1:
+            return "자견" if age <= PUPPY_MAX_MONTHS else "성견"
+        if age <= PUPPY_MAX_YEARS:
             return "자견"
-        if 2 <= age <= 6:
+        if ADULT_MIN_YEARS <= age <= ADULT_MAX_YEARS:
             return "성견"
         return "노령견"
     return None
 
 
 def infer_department_filter(question: str) -> str | None:
-    normalized = question.lower()
+    normalized_question = question.lower()
     for department in DEPARTMENT_OPTIONS:
-        if department != "전체" and department in normalized:
+        if department != "전체" and department in normalized_question:
             return department
 
-    compact = "".join(normalized.split())
+    compact_question = "".join(normalized_question.split())
     for department, keywords in DEPARTMENT_KEYWORDS.items():
-        if any(keyword in compact for keyword in keywords):
+        if any(keyword in compact_question for keyword in keywords):
             return department
     return None
 
@@ -732,7 +763,7 @@ def infer_rag_filters(question: str) -> dict[str, str]:
 def chatbot(
     question: str,
     *,
-    top_k: int = 3,
+    top_k: int = DEFAULT_RAG_TOP_K,
     chat_history=None,
 ) -> dict[str, Any]:
     """질문을 분류한 뒤 rag, sql, 또는 도구 없는 일반 응답을 실행합니다."""
@@ -742,9 +773,9 @@ def chatbot(
     if is_date_question(question):
         return {"route": "none", "answer": current_date_answer()}
 
+    contextual_question = build_rag_search_query(question, chat_history)
     route = classify_question(question, chat_history=chat_history)
     if route == "rag":
-        contextual_question = build_rag_search_query(question, chat_history)
         rag_result = ask_rag(
             question,
             k=top_k,
@@ -763,9 +794,7 @@ def chatbot(
             "evidence_rows": [],
         }
     elif route == "sql":
-        answer, hospital_rows = run_sql_search(
-            build_rag_search_query(question, chat_history)
-        )
+        answer, hospital_rows = run_sql_search(contextual_question)
     else:
         answer = answer_without_tool(question, chat_history=chat_history)
         hospital_rows = []
@@ -784,7 +813,7 @@ def render_hospital_links(rows):
             f"{row.get('name', '병원')} - {row.get('new_address', '')}",
             key=f"hospital_link_{hospital_id}",
         ):
-            st.session_state["selected_hospital_id"] = hospital_id
+            st.session_state[SELECTED_HOSPITAL_ID_STATE_KEY] = hospital_id
             st.switch_page("pages/hospital.py")
 
 
@@ -796,20 +825,18 @@ def render_page():
         description="건강 질문은 RAG로, 병원 검색은 SQLite로, 보고서 분석은 분석 도구로 처리합니다.",
         accent="검증된 정보로 함께 살펴봐요",
     )
-    st.title("반려견 AI 상담")
-    st.caption("건강 질문은 RAG로, 병원 검색은 SQLite로, 보고서 분석은 분석 도구로 처리합니다.")
 
     top_k = st.slider(
         "참고할 근거 수",
-        min_value=1,
-        max_value=5,
-        value=3,
-        key="rag_top_k",
+        min_value=MIN_RAG_TOP_K,
+        max_value=MAX_RAG_TOP_K,
+        value=DEFAULT_RAG_TOP_K,
+        key=RAG_TOP_K_SLIDER_KEY,
     )
 
-    if "fixing_messages" not in st.session_state:
-        st.session_state.fixing_messages = []
-    for message in st.session_state.fixing_messages:
+    if CHAT_MESSAGES_STATE_KEY not in st.session_state:
+        st.session_state[CHAT_MESSAGES_STATE_KEY] = []
+    for message in st.session_state[CHAT_MESSAGES_STATE_KEY]:
         with st.chat_message(message["role"]):
             st.write(message["content"])
 
@@ -834,11 +861,11 @@ def render_page():
         unsafe_allow_html=True,
     )
     if not question:
-        render_hospital_links(st.session_state.get("hospital_rows", []))
+        render_hospital_links(st.session_state.get(HOSPITAL_ROWS_STATE_KEY, []))
         return
 
-    chat_history = get_recent_chat_history(st.session_state.fixing_messages)
-    st.session_state.fixing_messages.append({"role": "user", "content": question})
+    chat_history = get_recent_chat_history(st.session_state[CHAT_MESSAGES_STATE_KEY])
+    st.session_state[CHAT_MESSAGES_STATE_KEY].append({"role": "user", "content": question})
     with st.chat_message("user"):
         st.write(question)
     with st.chat_message("assistant"):
@@ -853,15 +880,15 @@ def render_page():
                 )
 
             st.write(result["answer"])
-            st.session_state.fixing_messages.append(
+            st.session_state[CHAT_MESSAGES_STATE_KEY].append(
                 {"role": "assistant", "content": result["answer"]}
             )
-            st.session_state.fixing_messages = get_recent_chat_history(
-                st.session_state.fixing_messages
+            st.session_state[CHAT_MESSAGES_STATE_KEY] = get_recent_chat_history(
+                st.session_state[CHAT_MESSAGES_STATE_KEY]
             )
 
-            st.session_state["hospital_rows"] = result.get("hospital_rows", [])
-            render_hospital_links(st.session_state["hospital_rows"])
+            st.session_state[HOSPITAL_ROWS_STATE_KEY] = result.get("hospital_rows", [])
+            render_hospital_links(st.session_state[HOSPITAL_ROWS_STATE_KEY])
 
             evidence_rows = result.get("evidence_rows", [])
             if evidence_rows:
