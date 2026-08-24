@@ -11,7 +11,9 @@ RAG 기반 챗봇입니다.
 Streamlit으로 웹 UI를 구성했으며,  
 반려동물 건강 상담, 동물병원 검색, 반려동물 보고서 분석 기능을 제공합니다.
 
+배포 주소: https://mle-01-p1-team2-f5fqyncuwejycn4hyrp64b.streamlit.app/rag
 노션 주소: https://app.notion.com/p/3b5fceb573c380ea8488c7936f77f6d5
+
 
 ## 🎯 프로젝트 목표
 
